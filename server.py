@@ -13,7 +13,7 @@ Usage:
     python3 server.py once     # collect once
     python3 server.py status   # show state
 """
-import asyncio, hashlib, json, sqlite3, sys, urllib.request
+import asyncio, hashlib, json, os, sqlite3, sys, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +21,14 @@ BASE = Path(__file__).parent
 DATA = BASE / "data"
 RAW = DATA / "raw"
 DB = DATA / "powuk.db"
+
+# Load .env if present
+env_path = BASE / ".env"
+if env_path.exists():
+    for line in env_path.read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
 
 for d in [RAW / "grid", RAW / "trades", RAW / "planning", DATA / "derived"]:
     d.mkdir(parents=True, exist_ok=True)
@@ -203,7 +211,10 @@ def companies_house_capacity(conn):
     For: POW-relevant SIC codes only (electrical, HVAC, solar, EV, telecom, repair)
     """
     import base64
-    key = "d284d51e-b98b-4517-861d-0f8b2273ceeb"
+    key = os.environ.get("COMPANIES_HOUSE_API_KEY", "")
+    if not key:
+        log("ch_capacity: no API key configured")
+        return 0
     auth = base64.b64encode(f"{key}:".encode()).decode()
     
     SIC_CLUSTERS = {

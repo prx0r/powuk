@@ -103,8 +103,8 @@ def my_collector(conn):
 | APAR | none | ✓ Downloaded |
 
 ### API Keys
-- Companies House REST: `d284d51e-b98b-4517-861d-0f8b2273ceeb`
-- Companies House Streaming: `0aa57ba1-9f9a-4e5b-a45f-0e69b56a71ad`
+- Companies House REST: `YOUR_API_KEY`
+- Companies House Streaming: `YOUR_STREAM_KEY`
 
 ---
 

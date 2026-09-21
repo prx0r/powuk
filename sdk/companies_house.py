@@ -25,15 +25,27 @@ Usage:
 """
 import base64
 import json
+import os
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 from typing import Optional, Generator
 
-# ─── KEYS ────────────────────────────────────────────────────
+# ─── KEYS (from environment) ──────────────────────────────────
 
-REST_KEY = "d284d51e-b98b-4517-861d-0f8b2273ceeb"
-STREAM_KEY = "0aa57ba1-9f9a-4e5b-a45f-0e69b56a71ad"
+def _get_key(name: str) -> str:
+    """Get key from environment variable."""
+    return os.environ.get(name, "")
+
+REST_KEY = None  # Lazy loaded
+STREAM_KEY = None
+
+def _load_keys():
+    global REST_KEY, STREAM_KEY
+    if REST_KEY is None:
+        REST_KEY = _get_key("COMPANIES_HOUSE_API_KEY")
+    if STREAM_KEY is None:
+        STREAM_KEY = _get_key("COMPANIES_HOUSE_STREAM_KEY")
 
 REST_BASE = "https://api.company-information.service.gov.uk"
 DOC_BASE = "https://document-api.company-information.service.gov.uk"
@@ -42,9 +54,11 @@ STREAM_BASE = "https://stream.companieshouse.gov.uk"
 # ─── AUTH ─────────────────────────────────────────────────────
 
 def _rest_auth():
+    _load_keys()
     return base64.b64encode(f"{REST_KEY}:".encode()).decode()
 
 def _stream_auth():
+    _load_keys()
     return base64.b64encode(f"{STREAM_KEY}:".encode()).decode()
 
 # ─── REST API ─────────────────────────────────────────────────

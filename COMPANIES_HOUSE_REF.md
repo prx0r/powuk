@@ -4,7 +4,7 @@
 
 **Base URL:** `https://api.company-information.service.gov.uk`
 **Auth:** HTTP Basic — key as username, empty password
-**Key:** `d284d51e-b98b-4517-861d-0f8b2273ceeb`
+**Key:** `YOUR_API_KEY`
 **Rate limit:** 600 requests per 5 minutes per key (172,800/day)
 
 ---
@@ -25,11 +25,11 @@
 
 ```bash
 # curl
-curl -u "d284d51e-b98b-4517-861d-0f8b2273ceeb:" https://api.company-information.service.gov.uk/...
+curl -u "YOUR_API_KEY:" https://api.company-information.service.gov.uk/...
 
 # Python
 import base64, requests
-auth = base64.b64encode(b"d284d51e-b98b-4517-861d-0f8b2273ceeb:").decode()
+auth = base64.b64encode(b"YOUR_API_KEY:").decode()
 requests.get(url, headers={"Authorization": f"Basic {auth}"})
 ```
 
