@@ -83,13 +83,32 @@ def state(c, source, status, rows=None, interval=None):
               (source, datetime.now(timezone.utc).isoformat(), status, rows, interval))
     c.commit()
 
-# ─── FETCH ───────────────────────────────────────────────────
+# ─── FETCH (with retry) ──────────────────────────────────────
 
 def fetch(url, t=30):
-    return urllib.request.urlopen(urllib.request.Request(url,
-        headers={"User-Agent": "powuk/1.0"}), timeout=t).read()
+    """Fetch URL with retry logic."""
+    import time
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "powuk/1.0"})
+            with urllib.request.urlopen(req, timeout=t) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                time.sleep(60)
+            elif e.code == 404:
+                raise
+            elif attempt == 2:
+                raise
+            else:
+                time.sleep(5 * (attempt + 1))
+        except Exception as e:
+            if attempt == 2:
+                raise
+            time.sleep(5 * (attempt + 1))
 
 def fetch_json(url, t=30):
+    """Fetch URL, return parsed JSON."""
     return json.loads(fetch(url, t).decode())
 
 LOG = []
@@ -402,23 +421,36 @@ def refcom_capacity(conn):
 # ─── SERVER ──────────────────────────────────────────────────
 
 async def run_one(name, fn, interval, conn):
+    """Run a single collector with error handling."""
     while True:
         try:
             r = fn(conn)
-            state(conn, name, "ok", r, interval)
-            log(f"✓ {name}: {r}")
+            if r == 0 and "error" not in str(r).lower():
+                state(conn, name, "ok", r, interval)
+                log(f"✓ {name}: {r}")
+            elif r > 0:
+                state(conn, name, "ok", r, interval)
+                log(f"✓ {name}: {r}")
+            else:
+                state(conn, name, "empty")
+                log(f"○ {name}: 0 rows")
         except Exception as e:
             state(conn, name, "error")
             log(f"✗ {name}: {e}")
         await asyncio.sleep(interval)
 
 async def run_all(conn):
+    """Run all collectors once."""
     log(f"Running {len(COLLECTORS)} collectors...")
     for name, fn, _ in COLLECTORS:
         try:
             r = fn(conn)
-            state(conn, name, "ok", r)
-            log(f"✓ {name}: {r}")
+            if r > 0:
+                state(conn, name, "ok", r)
+                log(f"✓ {name}: {r}")
+            else:
+                state(conn, name, "empty")
+                log(f"○ {name}: 0 rows")
         except Exception as e:
             state(conn, name, "error")
             log(f"✗ {name}: {e}")
