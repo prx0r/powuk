@@ -1,0 +1,70 @@
+system: pow-frontier
+verified_at: 2026-09-20
+
+sources:
+  - id: openalex
+    priority: P0
+    collection_class: BACKFILL_SAFE
+    access: REST API
+    url: https://help.openalex.org/api/
+    recoverability: canonical
+    ingest:
+      - work ID
+      - DOI
+      - title
+      - publication/update date
+      - authors
+      - institutions
+      - topics/keywords
+      - source/venue
+      - citation metadata where useful
+    note: basic API is free to start; incremental from_updated_date sync is a paid/premium capability in current docs.
+
+  - id: crossref
+    priority: P1
+    collection_class: BACKFILL_SAFE
+    access: REST API no signup; polite pool recommended
+    url: https://www.crossref.org/documentation/retrieve-metadata/rest-api/
+    recoverability: canonical
+    ingest:
+      - DOI
+      - title
+      - author
+      - publisher
+      - published/updated
+      - relation/licence/funder metadata
+
+  - id: github
+    priority: P0
+    collection_class: COLLECT_NOW
+    access: REST API
+    url: https://docs.github.com/en/rest
+    recoverability: canonical_or_partial
+    ingest:
+      - watched repo releases
+      - tags
+      - commits
+      - repository metadata
+    note: authenticated primary rate limit typically 5,000 requests/hour; search endpoints differ.
+
+  - id: epo_ops
+    priority: P1
+    collection_class: BACKFILL_SAFE
+    access: Open Patent Services
+    url: https://www.epo.org/en/searching-for-patents/data/web-services/ops
+    recoverability: canonical
+    ingest:
+      - bibliographic data
+      - patent family
+      - CPC
+      - applicant/inventor
+      - legal status
+      - publication/priority dates
+    rights_note: terms allow inclusion in own machine-readable products but not raw republication 'as such'; confirm current terms.
+
+  - id: official_company_project_sources
+    priority: P0
+    collection_class: COLLECT_NOW
+    access: project-specific RSS/API/web/release
+    recoverability: partial
+    note: every watched project gets its own source manifest; official source outranks press paraphrase.

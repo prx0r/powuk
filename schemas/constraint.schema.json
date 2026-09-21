@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "powuk_constraint",
+  "description": "A physical constraint in the UK measured at a point in time",
+  "type": "object",
+  "required": ["constraint_id", "constraint_type", "region", "measured_at"],
+  "properties": {
+    "constraint_id": {
+      "type": "string",
+      "pattern": "^[A-Z]+-[A-Z]+-[A-Z0-9]+-\\d{8}$",
+      "description": "Unique constraint identifier"
+    },
+    "constraint_type": {
+      "type": "string",
+      "enum": ["grid_headroom", "grid_queue", "trade_capacity", "parts_availability", "planning_backlog", "infrastructure"]
+    },
+    "region": {
+      "type": "object",
+      "required": ["code", "name", "lat", "lon"],
+      "properties": {
+        "code": {"type": "string"},
+        "name": {"type": "string"},
+        "lat": {"type": "number"},
+        "lon": {"type": "number"}
+      }
+    },
+    "measured_at": {"type": "string", "format": "date-time"},
+    "demand_value": {"type": ["number", "null"]},
+    "supply_value": {"type": ["number", "null"]},
+    "severity": {"type": "integer", "minimum": 0, "maximum": 4},
+    "source": {"type": "string"},
+    "evidence_url": {"type": "string"},
+    "notes": {"type": "string"}
+  }
+}

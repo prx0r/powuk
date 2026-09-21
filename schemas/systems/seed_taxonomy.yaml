@@ -1,0 +1,39 @@
+component_families:
+  sensors:
+    - temperature_sensor
+    - thermistor
+    - thermostat
+    - pressure_sensor
+    - level_sensor
+    - flow_sensor
+    - hall_sensor
+    - encoder
+    - current_sensor
+    - vibration_sensor
+    - proximity_sensor
+    - optical_sensor
+    - force_torque_sensor
+    - imu
+
+  actuators:
+    - drain_pump
+    - circulation_pump
+    - water_inlet_valve
+    - solenoid_valve
+    - motor
+    - bldc_motor
+    - servo_motor
+    - fan
+    - compressor
+    - door_lock
+    - relay
+    - heater
+    - linear_actuator
+    - gripper
+
+  control_power:
+    - control_board
+    - power_board
+    - inverter
+    - vfd
+    - power_supply

@@ -1,0 +1,48 @@
+event_types:
+  physical:
+    - failure_pressure_up
+    - replacement_scarcity_up
+    - distributor_stock_drop
+    - lead_time_up
+    - part_price_up
+    - recall
+    - support_end
+    - substitute_added
+    - substitute_removed
+
+  labour:
+    - job_demand_up
+    - labour_supply_down
+    - self_employed_supply_change
+    - apprenticeship_starts_up
+    - apprenticeship_achievements_up
+    - tender_demand_up
+    - business_entry_up
+    - business_exit_up
+
+  grid:
+    - headroom_down
+    - constraint_cost_up
+    - boundary_utilisation_up
+    - balancing_cost_spike
+    - reinforcement_announced
+    - reinforcement_commissioned
+
+  capital:
+    - company_disclosure
+    - capacity_add
+    - capacity_remove
+    - order_win
+    - guidance_change
+    - l2_imbalance_shift
+    - liquidity_vacuum
+    - price_response
+
+  frontier:
+    - measured_cost_breakthrough
+    - measured_energy_breakthrough
+    - deployment
+    - benchmark_change
+    - protocol_change
+    - patent_publication
+    - major_release

@@ -1,0 +1,26 @@
+decisions:
+  - id: frontier.event_class
+    primitive: choice
+    question: What kind of technical/economic change is described by this evidence?
+    allowed_outputs: [PERFORMANCE, COST, ENERGY, CAPACITY, LATENCY, RELIABILITY, MANUFACTURING, DEPLOYMENT, REGULATION, FUNDING, OTHER]
+    confidence_threshold: 0.80
+    fallback: UNKNOWN
+
+  - id: frontier.constraint_relaxation
+    primitive: choice
+    question: Which primary resource constraint, if any, does the reported result plausibly relax?
+    allowed_outputs: [COMPUTE, ENERGY, MEMORY, BANDWIDTH, FABRICATION, SENSOR_INPUT, ACTUATION, LABOUR, MATERIALS, CAPITAL, NONE, OTHER]
+    confidence_threshold: 0.75
+    fallback: NONE
+
+  - id: frontier.deployment_real
+    primitive: noul
+    question: Is the described capability demonstrated/deployed beyond a purely proposed or simulated concept?
+    confidence_threshold: 0.85
+    fallback: UNKNOWN
+
+  - id: frontier.evidence_relevance
+    primitive: score
+    question: Score 0-4 how directly this new event tests the specified Seesaw prediction.
+    confidence_threshold: 0.80
+    fallback: UNKNOWN

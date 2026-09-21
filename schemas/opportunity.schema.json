@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "powuk_opportunity",
+  "description": "Where physical demand exceeds physical supply in the UK",
+  "type": "object",
+  "required": ["opportunity_id", "constraint", "gap_magnitude", "urgency", "detected_at"],
+  "properties": {
+    "opportunity_id": {"type": "string"},
+    "constraint": {"type": "object"},
+    "trade_profile": {"type": ["object", "null"]},
+    "gap_magnitude": {"type": "number"},
+    "urgency": {"type": "integer", "minimum": 0, "maximum": 4},
+    "detected_at": {"type": "string", "format": "date-time"},
+    "description": {"type": "string"},
+    "action": {"type": "string"}
+  }
+}

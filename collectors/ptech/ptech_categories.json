@@ -1,0 +1,51 @@
+{
+  "focus_families": {
+    "energy": [
+      "solar_panel",
+      "solar_inverter",
+      "battery_storage",
+      "charge_controller",
+      "ev_charger",
+      "heat_pump_controls"
+    ],
+    "compute": [
+      "gpu",
+      "cpu",
+      "server",
+      "accelerator",
+      "networking",
+      "storage",
+      "ups",
+      "cooling"
+    ],
+    "fabrication": [
+      "3d_printer",
+      "cnc_controller",
+      "laser_cutter",
+      "soldering_rework",
+      "test_equipment"
+    ],
+    "trade_tech": [
+      "power_tool",
+      "battery_pack",
+      "charger",
+      "electrical_test_equipment",
+      "industrial_controller",
+      "sensor",
+      "power_supply"
+    ],
+    "repairable_consumer_tech": [
+      "vacuum",
+      "coffee_machine",
+      "robot_vacuum",
+      "games_console",
+      "premium_small_appliance"
+    ]
+  },
+  "non_focus_initial": [
+    "fashion",
+    "collectibles",
+    "generic_furniture",
+    "commodity_low_value_tv"
+  ]
+}

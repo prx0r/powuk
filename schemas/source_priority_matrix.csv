@@ -1,0 +1,24 @@
+system,source,collection_class,priority,recoverability,rights,purpose
+pow-physical,Open Repair Alliance,BACKFILL_SAFE,P0,canonical,CC-BY-SA-4.0,repair events/faults/outcomes
+pow-physical,France durability,BACKFILL_SAFE,P0,canonical,open-data terms,repairability/reliability/parts support
+pow-physical,EPREL,BACKFILL_SAFE,P0,canonical,EU public registry terms,product identity/specs
+pow-physical,Mouser,COLLECT_NOW,P0,partial,API terms,component stock/price/lifecycle
+pow-physical,DigiKey,COLLECT_NOW,P0,partial,API terms,component stock/price/substitutions/PCN
+pow-physical,eBay Browse,COLLECT_NOW,P0,ephemeral,API terms,active listings/condition/ask
+pow-physical,OPSS,COLLECT_NOW,P0,canonical,UK public info/OGL as applicable,safety/recall events
+pow-uk,Skills England,BACKFILL_SAFE,P0,canonical,OGL + attribution conditions,occupation/KSB graph
+pow-uk,ONS Labour Demand SOC/LAD,BACKFILL_SAFE,P0,canonical,ONS/OGL,monthly job-ad demand
+pow-uk,Nomis APS218,BACKFILL_SAFE,P0,canonical,ONS/Nomis terms,occupation supply/self-employed
+pow-uk,DfE Apprenticeships,BACKFILL_SAFE,P0,canonical,GOV.UK open data terms,training flows
+pow-uk,Find a Tender,COLLECT_NOW,P0,canonical,OGL,procurement demand
+pow-grid,Elexon Insights,COLLECT_NOW,P0,canonical/partial,public API terms,system price/frequency/generation
+pow-grid,NESO Open Data,BACKFILL_SAFE,P0,canonical,NESO Open Data Licence,constraint/balancing/boundaries
+pow-grid,UKPN,COLLECT_NOW,P0,partial,portal terms,headroom/flows
+pow-grid,NGED,COLLECT_NOW,P0,partial,portal terms,substation/capacity
+pow-capital,OpenFIGI,BACKFILL_SAFE,P0,canonical,OpenFIGI terms,security identity
+pow-capital,FCA NSM,COLLECT_NOW,P0,canonical,FCA public data terms,regulated disclosures
+pow-capital,IBKR L2,COLLECT_NOW,P0,ephemeral,INTERNAL_ONLY pending review,deep order book
+pow-frontier,GitHub,COLLECT_NOW,P0,canonical/partial,GitHub API terms,release/commit events
+pow-frontier,OpenAlex,BACKFILL_SAFE,P0,canonical,OpenAlex terms,research graph
+pow-frontier,Crossref,BACKFILL_SAFE,P1,canonical,Crossref metadata terms,DOI metadata
+pow-frontier,EPO OPS,BACKFILL_SAFE,P1,canonical,OPS terms,patent/legal-status signals

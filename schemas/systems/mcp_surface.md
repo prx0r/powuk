@@ -1,0 +1,7 @@
+- `pow_frontier_get_events(domain, range)`
+- `pow_frontier_get_watched_entity(entity_id)`
+- `pow_frontier_get_seesaw(hypothesis_id)`
+- `pow_frontier_get_hypothesis_evidence(hypothesis_id)`
+- `pow_frontier_get_kill_status(hypothesis_id)`
+- `pow_frontier_get_predictions(hypothesis_id)`
+- `pow_frontier_explain_evidence(evidence_id)`
