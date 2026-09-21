@@ -5,22 +5,22 @@ REST API + Document API + Streaming API + Bulk Data.
 All in one place. Import and use.
 
 Usage:
-    from sdk.companies_house import CH
+    from sdk.companies_house import search_companies, get_company, get_officers
     
     # Search for electrical contractors in London
-    results = CH.search_companies("electrical contractor", items_per_page=100)
+    results = search_companies("electrical contractor", items_per_page=100)
     
     # Get company profile
-    profile = CH.get_company("07621999")
+    profile = get_company("07621999")
     
     # Get officers
-    officers = CH.get_officers("07621999")
+    officers = get_officers("07621999")
     
     # Get filing history
-    filings = CH.get_filings("07621999")
+    filings = get_filings("07621999")
     
     # Stream real-time events
-    for event in CH.stream_filings():
+    for event in stream_filings():
         print(event)
 """
 import base64
@@ -218,7 +218,7 @@ def stream_endpoint(endpoint: str, timepoint: int = None) -> Generator[dict, Non
         "User-Agent": "powuk-sdk/1.0",
     })
     
-    resp = urllib.request.urlopen(req, timeout=None)
+    resp = urllib.request.urlopen(req, timeout=300)  # 5 min timeout, reconnect if needed
     
     buffer = ""
     for chunk in iter(lambda: resp.read(1), b""):
@@ -266,9 +266,11 @@ def is_trade_company(company: dict, trade_sics: list = None) -> bool:
     return any(sic in trade_sics for sic in sic_codes)
 
 def get_trade_companies_in_region(region: str, trade_sics: list = None) -> list:
-    """Get all trade companies in a region."""
+    """Get all trade companies in a region. Rate-limited to 600 req/5min."""
+    import time
     results = []
     start = 0
+    request_count = 0
     while True:
         data = advanced_search(
             sic_codes=",".join(trade_sics) if trade_sics else "43210,43220,43290",
@@ -282,6 +284,10 @@ def get_trade_companies_in_region(region: str, trade_sics: list = None) -> list:
             break
         results.extend(items)
         start += len(items)
+        request_count += 1
+        # Rate limit: pause every 500 requests (well under 600/5min limit)
+        if request_count % 500 == 0:
+            time.sleep(5)
         if start >= data.get("total_results", 0):
             break
     return results

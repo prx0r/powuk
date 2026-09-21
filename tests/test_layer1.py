@@ -107,7 +107,7 @@ def test_health_record_blocked():
 def test_collector_result_types():
     """Collector result has correct status types."""
     r1 = CollectorResult(status=CollectorStatus.SUCCESS, rows=100)
-    assert r1.status == "ok"
+    assert r1.status == "success"
     
     r2 = CollectorResult(status=CollectorStatus.FAILED, error="timeout")
     assert r2.status == "failed"
@@ -115,15 +115,18 @@ def test_collector_result_types():
 def test_store_raw():
     """Raw storage writes content-hashed files."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.db"
-        conn = get_db(str(db_path))
+        # Override RAW_DIR to use temp directory
+        import layer1.collector as lc
+        orig_raw = lc.RAW_DIR
+        lc.RAW_DIR = Path(tmpdir) / "raw"
         
-        result = store_raw(conn, "test_source", b'{"test": "data"}')
-        assert result["hash"]
-        assert result["bytes"] == 16
-        assert Path(result["path"]).exists()
-        
-        conn.close()
+        try:
+            result = store_raw("test_source", b'{"test": "data"}')
+            assert result["hash"]
+            assert result["bytes"] == 16
+            assert Path(result["path"]).exists()
+        finally:
+            lc.RAW_DIR = orig_raw
 
 def test_get_db_creates_schema():
     """Database schema is created on first access."""

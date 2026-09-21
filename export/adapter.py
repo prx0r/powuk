@@ -12,7 +12,6 @@ from typing import Optional
 
 # Import powkernel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "k2"))
-from pow.canonical import make_id
 from pow.model import Node, Edge, Observation, Evidence, Derivation
 from pow.graph import Graph
 from pow.store import Store
@@ -180,8 +179,8 @@ def export_powuk_to_powkernel(conn, store_path: str = None) -> dict:
             if store:
                 store.append(pk_obs)
             exported["observations"] += 1
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: export observations failed: {e}")
     
     # 3. Export collector state as evidence
     try:
@@ -200,8 +199,8 @@ def export_powuk_to_powkernel(conn, store_path: str = None) -> dict:
             if store:
                 store.append(ev)
             exported["evidence"] += 1
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: export evidence failed: {e}")
     
     # 4. Export capability providers as nodes + observations
     try:
@@ -232,7 +231,7 @@ def export_powuk_to_powkernel(conn, store_path: str = None) -> dict:
                 if store:
                     store.append(obs)
                 exported["observations"] += 1
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: export providers failed: {e}")
     
     return exported

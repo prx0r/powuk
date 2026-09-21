@@ -69,6 +69,49 @@ The ONLY place powuk touches powkernel. All other code is UK-specific.
 
 ---
 
+## Level Definitions
+
+```text
+LEVEL 0 — Source Discovery
+  API exploration, documentation, fixtures
+  Status: done for all 14 sources
+
+LEVEL 1 — Physical Observatory (CURRENT)
+  Raw acquisition, historical backfill, continuous snapshots
+  Source-faithful normalization, provenance, coverage
+  Monitoring, schema-drift detection
+  "Don't ask what the data means yet. Make sure we own the data correctly."
+
+LEVEL 2 — Entity Resolution
+  Canonical entity resolution, geography harmonisation
+  Occupation/SIC/capability mappings, cross-source joins
+  Consistent time series
+
+LEVEL 3 — Constraint Economics
+  Scarcity, shadow prices, entry/exit
+  Seesaw, lag models, AGI impact, opportunities
+```
+
+### Level 1 Invariant
+
+```text
+If collector says N normalized records,
+I can query N normalized records.
+Not "we parsed N in RAM once."
+```
+
+### Level 1 Source Coverage
+
+Every bounded source tracks:
+
+```text
+expected_count | collected_count | coverage_ratio | complete
+```
+
+If coverage < 0.99, source is PARTIAL, never VERIFIED.
+
+---
+
 ## How to operate
 
 ### Start the server

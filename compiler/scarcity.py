@@ -6,10 +6,10 @@ produces a derived scarcity view per region × constraint type.
 This is the core of powuk — it answers:
 "Where is physical demand appearing faster than physical capacity can respond?"
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from ..core.constraints import (
-    Constraint, ConstraintType, Severity, Region, TradeProfile
+    Constraint, ConstraintType, Severity, Region
 )
 
 
@@ -39,7 +39,7 @@ def compile_grid_constraint(
     ts: Optional[datetime] = None,
 ) -> list[Constraint]:
     """Compile grid constraints for a region."""
-    ts = ts or datetime.utcnow()
+    ts = ts or datetime.now(timezone.utc)
     constraints = []
 
     if demand_mw is not None and capacity_mw is not None:
@@ -80,7 +80,7 @@ def compile_trade_constraint(
     ts: Optional[datetime] = None,
 ) -> Optional[Constraint]:
     """Compile trade capacity constraint for a region."""
-    ts = ts or datetime.utcnow()
+    ts = ts or datetime.now(timezone.utc)
     severity = compute_severity(job_postings, float(active_count) if active_count else None)
 
     return Constraint(

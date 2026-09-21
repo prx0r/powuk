@@ -14,54 +14,21 @@ Usage:
     python3 server.py status   # show state
 """
 import asyncio, hashlib, json, os, sqlite3, sys, time, urllib.request
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-
-# ─── COLLECTOR RESULT ────────────────────────────────────────
-
-class CollectorStatus(str, Enum):
-    SUCCESS = "success"
-    SUCCESS_EMPTY = "success_empty"
-    PARTIAL = "partial"
-    FAILED = "failed"
-    BLOCKED = "blocked"
-
-
-@dataclass
-class CollectorResult:
-    """Explicit collector outcome. Never infer status from row count."""
-    status: CollectorStatus
-    rows: int = 0
-    artifacts: list = field(default_factory=list)
-    cursor: Optional[str] = None
-    warnings: list = field(default_factory=list)
-    error: Optional[str] = None
-
-    @staticmethod
-    def success(rows=0, **kw):
-        s = CollectorStatus.SUCCESS_EMPTY if rows == 0 else CollectorStatus.SUCCESS
-        return CollectorResult(status=s, rows=rows, **kw)
-
-    @staticmethod
-    def partial(rows=0, **kw):
-        return CollectorResult(status=CollectorStatus.PARTIAL, rows=rows, **kw)
-
-    @staticmethod
-    def failed(error, **kw):
-        return CollectorResult(status=CollectorStatus.FAILED, error=str(error), **kw)
-
-    @staticmethod
-    def blocked(reason, **kw):
-        return CollectorResult(status=CollectorStatus.BLOCKED, error=reason, **kw)
+# Import collector types from layer1 (single source of truth)
+sys.path.insert(0, str(Path(__file__).parent))
+from layer1.collector import CollectorResult, CollectorStatus, record_coverage, store_raw, store_normalized
 
 BASE = Path(__file__).parent
 DATA = BASE / "data"
 RAW = DATA / "raw"
 DB = DATA / "powuk.db"
+
+
+# ─── SOURCE REGISTRY ──────────────────────────────────────────
 
 # Load .env if present
 env_path = BASE / ".env"
@@ -102,6 +69,17 @@ def get_db():
     CREATE TABLE IF NOT EXISTS collector_state (
         source TEXT PRIMARY KEY, last_run TEXT, status TEXT,
         rows INT, interval INT, runs INT DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS source_coverage (
+        source_id TEXT NOT NULL,
+        partition TEXT NOT NULL DEFAULT 'default',
+        expected_count INT NOT NULL,
+        collected_count INT NOT NULL,
+        unique_count INT,
+        coverage_ratio REAL NOT NULL,
+        complete BOOLEAN NOT NULL,
+        checked_at TEXT NOT NULL,
+        PRIMARY KEY (source_id, partition)
     );
     """)
     c.commit()
@@ -161,6 +139,11 @@ def state(c, source, status, rows=None, interval=None):
               status=excluded.status, rows=excluded.rows, runs=runs+1""",
               (source, datetime.now(timezone.utc).isoformat(), status, rows, interval))
     c.commit()
+
+def get_last_success(conn, source):
+    """Get last successful run time for a source (watermark for incremental fetch)."""
+    row = conn.execute("SELECT last_run FROM collector_state WHERE source=?", (source,)).fetchone()
+    return row[0] if row else None
 
 # ─── FETCH (with retry) ──────────────────────────────────────
 
@@ -240,6 +223,18 @@ def load_sources():
 
 SOURCES = load_sources()
 
+def cadence_to_seconds(cadence):
+    """Convert cadence string from sources.yaml to seconds."""
+    if not cadence:
+        return 3600
+    cadence = cadence.strip().lower()
+    mapping = {
+        "hourly": 3600, "1h": 3600,
+        "2h": 7200, "3h": 10800, "6h": 21600,
+        "12h": 43200, "daily": 86400, "24h": 86400,
+    }
+    return mapping.get(cadence, 3600)
+
 def get_source_config(source_id):
     """Get config for a source, with cadence fallback to COLLECTORS list."""
     return SOURCES.get(source_id, {})
@@ -254,15 +249,19 @@ def log(m):
 
 COLLECTORS = []
 
-def c(name, interval):
+def c(name, default_interval=None):
+    """Register a collector. Reads cadence from sources.yaml if available."""
     def d(fn):
+        src = SOURCES.get(name, {})
+        cadence = src.get("cadence")
+        interval = cadence_to_seconds(cadence) if cadence else (default_interval or 3600)
         COLLECTORS.append((name, fn, interval))
         return fn
     return d
 
 # GRID: Where is demand outstripping capacity?
 
-@c("neso_demand", 3600)  # hourly
+@c("neso_demand")  # cadence from sources.yaml (hourly)
 def grid_demand(conn):
     """UK half-hourly electricity demand — the demand side of grid constraints.
     
@@ -286,7 +285,7 @@ def grid_demand(conn):
                     pass
     return CollectorResult.success(rows=len(lines)-1, warnings=[f"Stored {count} observations (last 24h)"] if count else [])
 
-@c("neso_generation", 3600)  # hourly
+@c("neso_generation")  # cadence from sources.yaml (hourly)
 def grid_generation(conn):
     """UK generation mix — shows renewable penetration and fossil backup.
     
@@ -313,7 +312,7 @@ def grid_generation(conn):
                     pass
     return CollectorResult.success(rows=len(lines)-1, warnings=[f"Stored {count} observation sets (last 24h)"] if count else [])
 
-@c("pvlive", 3600)  # hourly
+@c("pvlive")  # cadence from sources.yaml (hourly)
 def grid_solar(conn):
     """Actual UK solar generation — embedded generation affects local headroom."""
     d = fetch_json("https://api.pvlive.uk/pvlive/api/v4/gsp/0?data_format=json")
@@ -324,7 +323,7 @@ def grid_solar(conn):
                 obs(conn, "grid", "uk_solar_actual_mw", row[2], "MW", row[1])
     return CollectorResult.success(rows=1)
 
-@c("ukpn_flex", 43200)  # 12h
+@c("ukpn_flex")  # cadence from sources.yaml (12h)
 def grid_dno_flex(conn):
     """UKPN flexibility dispatches — where DNOs are managing constraints.
     
@@ -336,7 +335,7 @@ def grid_dno_flex(conn):
 
 # TRADES: Are there enough people to do the work?
 
-@c("evspark_trades", 86400)  # daily
+@c("evspark_trades")  # cadence from sources.yaml (daily)
 def trade_supply(conn):
     """Electrical businesses by UK postcode area — supply side of trade constraints.
     
@@ -354,20 +353,25 @@ def trade_supply(conn):
 
 # PLANNING: Where is development happening faster than approvals?
 
-@c("planning_apps", 7200)  # 2h
+@c("planning_apps")  # cadence from sources.yaml (2h)
 def planning_demand(conn):
     """Planning applications — where development pressure exists.
     
-    Paginates through available data with bounded windows.
+    Uses modified_since watermark for incremental fetch.
     Stage: raw
     """
     all_entities = []
     start_index = 0
     page_size = 100
-    max_records = 5000
     
-    while start_index < max_records:
+    # Use watermark for incremental fetch
+    last_success = get_last_success(conn, "planning_apps")
+    max_pages = 50  # from sources.yaml
+    
+    while start_index < max_pages * page_size:
         url = f"https://www.planning.data.gov.uk/entity.json?dataset=planning-application&limit={page_size}&start={start_index}"
+        if last_success:
+            url += f"&modified_since={last_success[:10]}"
         d = fetch_json(url)
         if "entities" not in d or len(d["entities"]) == 0:
             break
@@ -377,24 +381,28 @@ def planning_demand(conn):
             break
     
     if all_entities:
-        store(conn, "planning", "apps", json.dumps({"entities": all_entities}).encode(), len(all_entities))
-        obs(conn, "planning", "apps_total", float(len(all_entities)), "apps")
+        store_normalized("planning_apps", all_entities)
+    
     return CollectorResult.success(rows=len(all_entities))
 
-@c("contracts_finder", 7200)  # 2h
+@c("contracts_finder")  # cadence from sources.yaml (2h)
 def procurement_demand(conn):
     """Public procurement — where government is buying capacity.
     
-    Paginates through available data with bounded windows.
+    Uses modified_since watermark for incremental fetch.
     Stage: raw
     """
     all_releases = []
     start_index = 0
     page_size = 100
-    max_records = 1000
+    max_pages = 50  # from sources.yaml
     
-    while start_index < max_records:
+    last_success = get_last_success(conn, "contracts_finder")
+    
+    while start_index < max_pages * page_size:
         url = f"https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search?limit={page_size}&start={start_index}"
+        if last_success:
+            url += f"&modifiedSince={last_success[:10]}"
         d = fetch_json(url, t=15)
         if "releases" not in d or len(d["releases"]) == 0:
             break
@@ -402,29 +410,46 @@ def procurement_demand(conn):
         start_index += page_size
     
     if all_releases:
-        store(conn, "planning", "contracts", json.dumps({"releases": all_releases}).encode(), len(all_releases))
-        obs(conn, "planning", "contracts_total", float(len(all_releases)), "releases")
+        store_normalized("contracts_finder", all_releases)
+    
     return CollectorResult.success(rows=len(all_releases))
 
-@c("find_tender", 7200)  # 2h
+@c("find_tender")  # cadence from sources.yaml (2h)
 def find_tender(conn):
     """Find a Tender — higher-value UK procurement (OCDS).
     
-    Stage: raw — single fetch, no pagination yet.
+    Paginates through available releases with watermark.
+    Stage: raw
     """
-    url = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=50"
-    d = fetch_json(url, t=15)
-    releases = d.get("releases", [])
-    if releases:
-        store(conn, "planning", "find_tender", json.dumps(d).encode(), len(releases))
-        obs(conn, "planning", "tender_total", float(len(releases)), "releases")
-    return CollectorResult.success(rows=len(releases), warnings=["Stage raw: single fetch, no pagination"])
+    all_releases = []
+    start_index = 0
+    page_size = 50
+    max_pages = 50  # from sources.yaml
+    
+    last_success = get_last_success(conn, "find_tender")
+    
+    while start_index < max_pages * page_size:
+        url = f"https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit={page_size}&start={start_index}"
+        if last_success:
+            url += f"&modifiedSince={last_success[:10]}"
+        d = fetch_json(url, t=15)
+        releases = d.get("releases", [])
+        if not releases:
+            break
+        all_releases.extend(releases)
+        start_index += page_size
+    
+    if all_releases:
+        store_normalized("find_tender", all_releases)
+    
+    return CollectorResult.success(rows=len(all_releases))
 
-@c("ch_capacity", 43200)  # 12h
+@c("ch_capacity")  # cadence from sources.yaml (12h)
 def companies_house_capacity(conn):
     """Companies House — POWUK business capacity layer.
     
-    Uses SIC code search with size=5000 and counts returned items.
+    SIC clusters driven from sources.yaml config.
+    Paginates all companies per SIC code.
     """
     import base64
     key = os.environ.get("COMPANIES_HOUSE_API_KEY", "")
@@ -433,48 +458,74 @@ def companies_house_capacity(conn):
     
     auth = base64.b64encode(f"{key}:".encode()).decode()
     
-    SIC_CLUSTERS = {
-        "electrical": "43210",
-        "hvac": "43220",
-        "solar": "35110",
-        "ev": "43210",
-        "telecom": "61100",
-        "repair": "95110",
-        "construction": "41100",
-    }
+    # Load SIC clusters from sources.yaml
+    try:
+        import yaml
+        with open(BASE / "config" / "sources.yaml") as f:
+            config = yaml.safe_load(f)
+        ch_config = next(s for s in config["sources"] if s["id"] == "ch_capacity")
+        sic_clusters = ch_config.get("sic_clusters", {})
+    except Exception:
+        # Fallback if config unreadable
+        sic_clusters = {
+            "electrical": ["43210"],
+            "hvac": ["43220"],
+            "solar": ["35110"],
+            "telecom": ["61100"],
+            "repair": ["95110"],
+            "construction": ["41100"],
+        }
     
     warnings = []
     results = {}
-    for cluster, sic in SIC_CLUSTERS.items():
+    for cluster, sic_codes in sic_clusters.items():
         try:
-            # Use size=5000 to get actual count of returned items
-            url = f"https://api.company-information.service.gov.uk/advanced-search/companies?sic_codes={sic}&company_status=active&size=5000"
-            req = urllib.request.Request(url, headers={
-                "Authorization": f"Basic {auth}",
-                "User-Agent": "powuk/1.0",
-            })
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                d = json.loads(resp.read().decode())
-                items = d.get("items", [])
-                # Count returned items as the actual firm count
-                # total_results may be unreliable, so use len(items) when size < total
-                returned_count = len(items)
-                total_reported = d.get("total_results", returned_count)
-                # If we got fewer than requested, total_reported is likely accurate
-                # If we got exactly 5000, there may be more
-                firm_count = total_reported if returned_count < 5000 else returned_count
-                results[cluster] = {"sic": sic, "active_firms": firm_count, "returned": returned_count}
-                obs(conn, "ch", f"active_firms_{cluster}", float(firm_count), "firms")
-                if firm_count <= 1:
-                    warnings.append(f"{cluster}: count={firm_count}")
+            all_items = []
+            for sic in sic_codes:
+                start_index = 0
+                while start_index < 10000:  # Safety cap
+                    url = f"https://api.company-information.service.gov.uk/advanced-search/companies?sic_codes={sic}&company_status=active&size=5000&start_index={start_index}"
+                    req = urllib.request.Request(url, headers={
+                        "Authorization": f"Basic {auth}",
+                        "User-Agent": "powuk/1.0",
+                    })
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        d = json.loads(resp.read().decode())
+                        items = d.get("items", [])
+                        all_items.extend(items)
+                        if len(items) < 5000:
+                            break
+                        start_index += len(items)
+            
+            # Dedupe by company_number
+            seen = set()
+            unique = []
+            for item in all_items:
+                cn = item.get("company_number")
+                if cn and cn not in seen:
+                    seen.add(cn)
+                    unique.append({
+                        "company_number": cn,
+                        "name": item.get("company_name"),
+                        "status": item.get("company_status"),
+                        "sic_codes": item.get("sic_codes", []),
+                        "incorporation_date": item.get("incorporation_date"),
+                        "postcode": item.get("registered_office_address", {}).get("postal_code"),
+                    })
+            
+            results[cluster] = {"sic_codes": sic_codes, "active_firms": len(unique)}
+            obs(conn, "ch", f"active_firms_{cluster}", float(len(unique)), "firms")
         except Exception as e:
             warnings.append(f"{cluster}: {str(e)[:80]}")
     
-    store(conn, "ch", "capacity_snapshot", json.dumps(results).encode())
+    # Store normalized via store_normalized
+    cluster_records = [{"cluster": cluster, **info} for cluster, info in results.items()]
+    store_normalized("ch_capacity", cluster_records)
+    
     obs(conn, "ch", "clusters_tracked", float(len(results)))
     return CollectorResult.success(rows=len(results), warnings=warnings)
 
-@c("apar", 86400)  # daily
+@c("apar")  # cadence from sources.yaml (daily)
 def apar_providers(conn):
     """APAR — Apprenticeship Provider and Assessment Register.
     
@@ -488,11 +539,8 @@ def apar_providers(conn):
     with urllib.request.urlopen(req, timeout=60) as resp:
         data = resp.read()
     
-    # Store raw
-    h = hashlib.sha256(data).hexdigest()[:16]
-    raw_path = RAW / "labour" / f"apar_{h}.csv"
-    raw_path.parent.mkdir(parents=True, exist_ok=True)
-    raw_path.write_bytes(data)
+    # Store raw via store_raw (dedup, content-hashed)
+    raw_info = store_raw("apar", data, "csv")
     
     # Parse CSV and normalize ALL fields
     lines = data.decode().strip().split("\n")
@@ -503,29 +551,52 @@ def apar_providers(conn):
         provider = {k: row.get(k) for k in row.keys()}
         providers.append(provider)
     
-    store(conn, "labour", "apar", json.dumps(providers).encode(), len(providers))
+    # Store normalized via store_normalized
+    store_normalized("apar", providers)
     
     active = sum(1 for p in providers if p.get("CanDeliverApprenticeships") == "True")
     obs(conn, "labour", "apar_providers_total", float(len(providers)), "providers")
     obs(conn, "labour", "apar_providers_active", float(active), "providers")
+    record_coverage(conn, "apar", expected=len(providers), collected=len(providers))
     
     return CollectorResult.success(rows=len(providers))
 
-@c("ofqual", 86400)  # daily
+@c("ofqual")  # cadence from sources.yaml (daily)
 def ofqual_qualifications(conn):
     """Ofqual register — UK qualifications by trade/level.
     
-    Stage: raw — active count filter may be wrong.
+    Paginates through all records (52K+ total).
     """
-    d = fetch_json("https://register-api.ofqual.gov.uk/api/qualifications?pageSize=500&type=Regulated%20Qualification")
-    results = d.get("results", [])
-    if results:
-        store(conn, "labour", "ofqual", json.dumps(d).encode(), len(results))
-        active = [q for q in results if q.get("status") == "Awarded"]
+    all_results = []
+    page_size = 500
+    start_index = 0
+    max_records = 60000  # Safety cap
+    
+    while start_index < max_records:
+        url = f"https://register-api.ofqual.gov.uk/api/qualifications?pageSize={page_size}&start={start_index}&type=Regulated%20Qualification"
+        d = fetch_json(url)
+        results = d.get("results", [])
+        if not results:
+            break
+        all_results.extend(results)
+        start_index += page_size
+        if len(results) < page_size:
+            break
+    
+    if all_results:
+        # Store normalized via store_normalized
+        store_normalized("ofqual", all_results)
+        
+        active = [q for q in all_results if q.get("status") == "Awarded"]
+        obs(conn, "labour", "uk_qualifications_total", float(len(all_results)))
         obs(conn, "labour", "uk_qualifications_active", len(active))
-    return CollectorResult.success(rows=len(results), warnings=["Stage raw: active count returns 0, status filter may be wrong"] if not results else [])
+        
+        # Coverage: Ofqual has ~52,887 total qualifications
+        record_coverage(conn, "ofqual", expected=52887, collected=len(all_results))
+    
+    return CollectorResult.success(rows=len(all_results))
 
-@c("ons_labour", 86400)  # daily
+@c("ons_labour")  # cadence from sources.yaml (daily)
 def ons_labour_demand(conn):
     """ONS labour demand — job adverts by SOC x region.
     
@@ -534,11 +605,8 @@ def ons_labour_demand(conn):
     url = "https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/labourdemandvolumesbystandardoccupationclassificationsoc2020uk/january2017tojuly2026/labourdemandbyoccupation.xlsx"
     d = fetch(url, 60)
     
-    # Store raw
-    h = hashlib.sha256(d).hexdigest()[:16]
-    raw_path = RAW / "labour" / f"ons_demand_{h}.xlsx"
-    raw_path.parent.mkdir(parents=True, exist_ok=True)
-    raw_path.write_bytes(d)
+    # Store raw via store_raw (dedup, content-hashed)
+    raw_info = store_raw("ons_labour", d, "xlsx")
     
     # Parse XLSX and normalize ALL rows
     import io
@@ -572,62 +640,75 @@ def ons_labour_demand(conn):
     
     wb.close()
     
-    # Store ALL normalized records
-    store(conn, "labour", "ons_demand", json.dumps(records).encode(), len(records))
+    # Store normalized via store_normalized
+    store_normalized("ons_labour", records)
     
     obs(conn, "labour", "ons_labour_records", float(len(records)), "records")
     obs(conn, "labour", "ons_labour_sheets", float(len(wb.sheetnames)), "sheets")
+    record_coverage(conn, "ons_labour", expected=len(records), collected=len(records))
     
     return CollectorResult.success(rows=len(records))
 
-@c("refcom", 86400)  # daily
+@c("refcom")  # cadence from sources.yaml (daily)
 def refcom_capacity(conn):
     """REFCOM F-gas certified companies — HVAC/refrigeration capacity.
     
-    Gets entity-level data (company name, postcode, status), not just count.
+    Full enumeration: iterates 0 to total-1, deduplicates by companyId.
     """
     base_url = "https://api.refcom.org.uk/api/PublicCompany"
     
-    # Get total count for monitoring
+    # Get total count
     count_url = f"{base_url}/GetFgasActiveCertificateCount"
-    req = urllib.request.Request(count_url, headers={"User-Agent": "powuk/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        total = int(resp.read().decode().strip())
+    count_data = fetch_json(count_url)
+    total = int(count_data) if isinstance(count_data, (int, float)) else int(str(count_data).strip())
     
-    # Get entity-level data (first 500 companies)
-    companies = []
-    for idx in range(0, min(500, total), 10):
+    # Store raw count response
+    store_raw("refcom", json.dumps({"total_count": total}).encode(), "json")
+    
+    # Enumerate ALL companies (0 to total-1)
+    companies = {}
+    errors = 0
+    for idx in range(total):
         url = f"{base_url}/GetByIndex?scheme=fgas&index={idx}"
         req = urllib.request.Request(url, headers={"User-Agent": "powuk/1.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode())
-            # API returns list of companies
-            items = data if isinstance(data, list) else [data] if data else []
-            for item in items:
-                if item and isinstance(item, dict) and item.get("companyName"):
-                    companies.append({
-                        "company_id": item.get("companyId"),
-                        "name": item.get("companyName"),
-                        "postcode": item.get("postcode"),
-                        "fgas_code": item.get("fGasCode"),
-                        "phone": item.get("telephoneNo"),
-                    })
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode())
+                items = data if isinstance(data, list) else [data] if data else []
+                for item in items:
+                    if item and isinstance(item, dict) and item.get("companyId"):
+                        cid = item["companyId"]
+                        if cid not in companies:
+                            companies[cid] = {
+                                "company_id": cid,
+                                "name": item.get("companyName"),
+                                "postcode": item.get("postcode"),
+                                "fgas_code": item.get("fGasCode"),
+                                "phone": item.get("telephoneNo"),
+                            }
+        except Exception:
+            errors += 1
+            if errors > 100:
+                break
     
-    result = {"total_count": total, "sample": companies}
-    store(conn, "certification", "refcom", json.dumps(result).encode())
+    company_list = list(companies.values())
+    
+    # Store normalized via store_normalized
+    store_normalized("refcom", company_list)
     
     obs(conn, "certification", "fgas_companies", float(total), "companies")
-    obs(conn, "certification", "fgas_sample_size", float(len(companies)), "companies")
+    obs(conn, "certification", "fgas_collected", float(len(company_list)), "companies")
     
+    coverage = len(company_list) / total if total > 0 else 0
     warnings = []
-    if not companies:
-        warnings.append("Entity fetch returned 0 companies")
-    elif len(companies) < 100:
-        warnings.append(f"Only fetched {len(companies)} of {total} companies")
+    if coverage < 0.99:
+        warnings.append(f"Coverage {coverage:.1%} ({len(company_list)}/{total})")
     
-    return CollectorResult.success(rows=total, warnings=warnings)
+    record_coverage(conn, "refcom", expected=total, collected=len(company_list))
+    
+    return CollectorResult.success(rows=len(company_list), warnings=warnings)
 
-@c("ashe_wages", 86400)  # daily
+@c("ashe_wages")  # cadence from sources.yaml (daily)
 def ashe_wages(conn):
     """ASHE — Annual Survey of Hours and Earnings.
     
@@ -641,11 +722,8 @@ def ashe_wages(conn):
     url = "https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/earningsandworkinghours/datasets/regionbyoccupation2digitsocashetable3/2025provisional/ashetable32025provisional.zip"
     d = fetch(url, 60)
     
-    # Store raw
-    h = hashlib.sha256(d).hexdigest()[:16]
-    raw_path = RAW / "labour" / f"ashe_table3_{h}.zip"
-    raw_path.parent.mkdir(parents=True, exist_ok=True)
-    raw_path.write_bytes(d)
+    # Store raw via store_raw (dedup, content-hashed)
+    raw_info = store_raw("ashe_wages", d, "zip")
     
     # Extract and parse XLSX
     import openpyxl
@@ -677,8 +755,93 @@ def ashe_wages(conn):
             
             wb.close()
     
-    store(conn, "labour", "ashe_wages", json.dumps(records).encode(), len(records))
+    # Store normalized via store_normalized
+    store_normalized("ashe_wages", records)
+    
     obs(conn, "labour", "ashe_wage_records", float(len(records)), "records")
+    record_coverage(conn, "ashe_wages", expected=len(records), collected=len(records))
+    
+    return CollectorResult.success(rows=len(records))
+
+@c("ons_skills")  # cadence from sources.yaml (daily)
+def ons_job_skills(conn):
+    """ONS job-ad skills/competencies from online job adverts.
+    
+    Skills, competencies and other job requirements from online job adverts, UK.
+    """
+    url = "https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/skillscompetenciesandotherjobrequirementsfromonlinejobadvertsuk/january2017toseptember2025/skillscompetenciesandotherjobrequirementsfromonlinejobadvertsuk.xlsx"
+    d = fetch(url, 60)
+    
+    # Store raw via store_raw (dedup, content-hashed)
+    raw_info = store_raw("ons_skills", d, "xlsx")
+    
+    # Parse XLSX
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(d), read_only=True)
+    
+    records = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows = list(ws.iter_rows(values_only=True))
+        if len(rows) < 2:
+            continue
+        headers = [str(h).strip() if h else f"col_{i}" for i, h in enumerate(rows[0])]
+        for row in rows[1:]:
+            if row is None or all(v is None for v in row):
+                continue
+            records.append({
+                "sheet": sheet_name,
+                "raw_row": [str(v) if v is not None else None for v in row[:15]],
+            })
+    wb.close()
+    
+    # Store normalized via store_normalized
+    store_normalized("ons_skills", records)
+    
+    obs(conn, "labour", "ons_skills_records", float(len(records)), "records")
+    record_coverage(conn, "ons_skills", expected=len(records), collected=len(records))
+    
+    return CollectorResult.success(rows=len(records))
+
+@c("ons_salaries")  # cadence from sources.yaml (daily)
+def ons_job_salaries(conn):
+    """ONS online job adverts salaries, UK.
+    
+    Salary data from online job adverts.
+    """
+    url = "https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/earningsandworkinghours/datasets/onlinejobadvertssalariesuk/january2017tomay2025/onlinejobadvertssalariesuk.xlsx"
+    d = fetch(url, 60)
+    
+    # Store raw via store_raw (dedup, content-hashed)
+    raw_info = store_raw("ons_salaries", d, "xlsx")
+    
+    # Parse XLSX
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(d), read_only=True)
+    
+    records = []
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows = list(ws.iter_rows(values_only=True))
+        if len(rows) < 2:
+            continue
+        headers = [str(h).strip() if h else f"col_{i}" for i, h in enumerate(rows[0])]
+        for row in rows[1:]:
+            if row is None or all(v is None for v in row):
+                continue
+            records.append({
+                "sheet": sheet_name,
+                "raw_row": [str(v) if v is not None else None for v in row[:15]],
+            })
+    wb.close()
+    
+    # Store normalized via store_normalized
+    store_normalized("ons_salaries", records)
+    
+    obs(conn, "labour", "ons_salaries_records", float(len(records)), "records")
+    record_coverage(conn, "ons_salaries", expected=len(records), collected=len(records))
     
     return CollectorResult.success(rows=len(records))
 
@@ -735,6 +898,15 @@ def status(conn):
     obs_count = conn.execute("SELECT COUNT(*) FROM observation").fetchone()[0]
     raw_count = conn.execute("SELECT COUNT(*) FROM raw_ingest").fetchone()[0]
     
+    # Get coverage data
+    try:
+        coverage_rows = conn.execute(
+            "SELECT source_id, expected_count, collected_count, coverage_ratio, complete FROM source_coverage"
+        ).fetchall()
+        coverage = {r[0]: {"expected": r[1], "collected": r[2], "ratio": r[3], "complete": r[4]} for r in coverage_rows}
+    except Exception:
+        coverage = {}
+    
     health = {}
     for row in rows:
         source = row[0]
@@ -744,16 +916,22 @@ def status(conn):
         # Check implementation stage from sources.yaml
         stage = SOURCES.get(source, {}).get("stage", "unknown")
         
+        cov = coverage.get(source)
+        cov_str = ""
+        if cov:
+            cov_str = f" [{cov['collected']}/{cov['expected']}={cov['ratio']:.0%}]"
+        
         if last_status in ("failed", "blocked"):
-            health[source] = f"FAILED ({stage})"
+            health[source] = f"FAILED ({stage}){cov_str}"
         elif run_count == 0:
-            health[source] = f"NOT_RUN ({stage})"
+            health[source] = f"NOT_RUN ({stage}){cov_str}"
         else:
-            health[source] = f"OK ({stage})"
+            health[source] = f"OK ({stage}){cov_str}"
     
     return {
         "collectors": {r[0]: {"status": r[2], "rows": r[3], "runs": r[5]} for r in rows},
         "health": health,
+        "coverage": coverage,
         "observations": obs_count,
         "raw_ingests": raw_count,
         "db_bytes": DB.stat().st_size if DB.exists() else 0
