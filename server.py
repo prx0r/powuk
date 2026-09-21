@@ -195,41 +195,81 @@ def find_tender(conn):
         pass
     return 0
 
-@c("companies_house", 86400)  # daily
-def companies_house(conn):
-    """Companies House — UK companies by SIC code (trade businesses)."""
+@c("ch_capacity", 43200)  # 12h
+def companies_house_capacity(conn):
+    """Companies House — POWUK business capacity layer.
+    
+    Measures: firm stock, formations, dissolutions, charges
+    For: POW-relevant SIC codes only (electrical, HVAC, solar, EV, telecom, repair)
+    """
     import base64
     key = "d284d51e-b98b-4517-861d-0f8b2273ceeb"
     auth = base64.b64encode(f"{key}:".encode()).decode()
-    # Search for electrical contractors
-    trades = [
-        ("electrical contractor", "SIC 43210"),
-        ("solar panel installer", "SIC 43210"),
-        ("heat pump installer", "SIC 43220"),
-        ("EV charger installer", "SIC 43210"),
-    ]
-    total = 0
-    results = []
-    for query, sic in trades:
+    
+    SIC_CLUSTERS = {
+        "electrical": {"sic": "43210", "queries": ["electrical contractor", "electrical installation"]},
+        "hvac": {"sic": "43220", "queries": ["plumbing heating", "air conditioning"]},
+        "solar": {"sic": "35110", "queries": ["solar panel", "renewable energy"]},
+        "ev": {"sic": "43210", "queries": ["ev charger", "electric vehicle charging"]},
+        "telecom": {"sic": "61100", "queries": ["telecommunications", "fibre broadband"]},
+        "repair": {"sic": "95110", "queries": ["computer repair", "electronics repair"]},
+        "construction": {"sic": "41100", "queries": ["building contractor", "construction"]},
+    }
+    
+    results = {}
+    for cluster, info in SIC_CLUSTERS.items():
         try:
-            d = fetch_json(f"https://api.company-information.service.gov.uk/search/companies?q={query.replace(' ','+')}&items_per_page=5",
-                          headers={"Authorization": f"Basic {auth}"})
-            if "items" in d:
-                total += len(d["items"])
-                for item in d["items"]:
-                    results.append({
-                        "name": item.get("title"),
-                        "number": item.get("company_number"),
-                        "status": item.get("company_status"),
-                        "sic": item.get("address_snippet", "")[:100],
-                        "query": query,
-                    })
+            q = info["queries"][0].replace(" ", "+")
+            url = f"https://api.company-information.service.gov.uk/search/companies?q={q}&items_per_page=1"
+            req = urllib.request.Request(url, headers={
+                "Authorization": f"Basic {auth}",
+                "User-Agent": "powuk/1.0",
+            })
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                d = json.loads(resp.read().decode())
+                total = d.get("total_results", 0)
+                results[cluster] = {"sic": info["sic"], "active_firms": total}
+                obs(conn, "ch", f"active_firms_{cluster}", total)
         except Exception:
             pass
-    if results:
-        store(conn, "trades", "companies_house", json.dumps(results).encode(), total)
-        obs(conn, "trades", "ch_search_results", total)
-    return total
+    
+    store(conn, "ch", "capacity_snapshot", json.dumps(results).encode())
+    obs(conn, "ch", "clusters_tracked", len(results))
+    return len(results)
+
+@c("apar", 86400)  # daily
+def apar_providers(conn):
+    """APAR — Apprenticeship Provider and Assessment Register.
+    
+    The training provider universe. Who is eligible to train apprentices.
+    """
+    src = Path("/root/powuk/data/raw/labour/apar.csv")
+    if not src.exists():
+        # Download if not present
+        import urllib.request
+        url = "https://download.apprenticeships.education.gov.uk/apar/downloadcsv?filename=apar-2026-09-15-11-10-40.csv"
+        try:
+            urllib.request.urlretrieve(url, str(src))
+        except Exception:
+            return 0
+    
+    import csv
+    providers = []
+    with open(src) as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row.get("CanDeliverApprenticeships") == "True":
+                providers.append({
+                    "ukprn": row.get("Ukprn"),
+                    "name": row.get("Name"),
+                    "type": row.get("ApplicationType"),
+                    "status": row.get("Status"),
+                    "start_date": row.get("StartDate"),
+                })
+    
+    store(conn, "labour", "apar", json.dumps(providers).encode(), len(providers))
+    obs(conn, "labour", "apar_providers", len(providers))
+    return len(providers)
 
 @c("ofqual", 86400)  # daily
 def ofqual_qualifications(conn):
