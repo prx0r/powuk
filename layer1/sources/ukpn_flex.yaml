@@ -1,5 +1,8 @@
 id: ukpn_flex
 garden: powuk
+domain: grid
+priority: P1
+stage: discovery
 authority:
   name: UK Power Networks
   url: https://ukpowernetworks.opendatasoft.com
@@ -18,6 +21,8 @@ time:
 health:
   expected_min_rows: 1
   max_staleness_hours: 24
+recoverability: snapshot
+rights: ogl
 url: https://ukpowernetworks.opendatasoft.com/api/explore/v2.1/catalog/datasets?limit=50
 format: json
 auth: none

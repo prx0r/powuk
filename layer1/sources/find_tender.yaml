@@ -1,5 +1,8 @@
 id: find_tender
 garden: powuk
+domain: procurement
+priority: P0
+stage: raw
 authority:
   name: Find a Tender
   url: https://www.find-tender.service.gov.uk
@@ -20,6 +23,11 @@ time:
 health:
   expected_min_rows: 10
   max_staleness_hours: 4
+recoverability: snapshot
+rights: ogl
+history:
+  type: paginated_api
+  partition: month
 url: https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages
 format: json
 auth: none

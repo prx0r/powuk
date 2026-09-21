@@ -21,8 +21,8 @@ def test_raw_store_immutable():
     r2 = store_raw("test_source", data)
     
     # Same content = same hash
-    assert r1["hash"] == r2["hash"]
-    
+    assert r1["full_sha256"] == r2["full_sha256"]
+
     # Same hash = same file path (deduplication)
     assert r1["path"] == r2["path"]
     
@@ -33,7 +33,7 @@ def test_raw_store_different_content():
     """Different content produces different hashes."""
     r1 = store_raw("test_source", b'content_a')
     r2 = store_raw("test_source", b'content_b')
-    assert r1["hash"] != r2["hash"]
+    assert r1["full_sha256"] != r2["full_sha256"]
 
 
 # ─── NORMALIZED STORE INVARIANTS ─────────────────────────────

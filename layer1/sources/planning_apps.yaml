@@ -1,5 +1,8 @@
 id: planning_apps
 garden: powuk
+domain: planning
+priority: P0
+stage: raw
 authority:
   name: Planning Data
   url: https://www.planning.data.gov.uk
@@ -20,6 +23,12 @@ time:
 health:
   expected_min_rows: 100
   max_staleness_hours: 4
+recoverability: snapshot
+rights: ogl
+history:
+  type: paginated_api
+  earliest: "2016-01-01"
+  partition: month
 url: https://www.planning.data.gov.uk/entity.json?dataset=planning-application
 format: json
 auth: none

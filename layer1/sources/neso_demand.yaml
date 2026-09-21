@@ -1,5 +1,8 @@
 id: neso_demand
 garden: powuk
+domain: grid
+priority: P0
+stage: normalized
 authority:
   name: National Grid ESO
   url: https://www.neso.energy
@@ -19,6 +22,12 @@ time:
 health:
   expected_min_rows: 100
   max_staleness_hours: 2
+recoverability: canonical
+rights: ogl
+history:
+  type: embedded_full_history
+  earliest: "2009"
+  partition: release
 url: https://api.neso.energy/dataset/7a12172a-939c-404c-b581-a6128b74f588/resource/177f6fa4-ae49-4182-81ea-0c6b35f26ca6/download/demanddataupdate.csv
 format: csv
 auth: none

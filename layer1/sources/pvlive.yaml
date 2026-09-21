@@ -1,5 +1,8 @@
 id: pvlive
 garden: powuk
+domain: grid
+priority: P0
+stage: raw
 authority:
   name: Sheffield Solar / PV Live
   url: https://www.pvlive.uk
@@ -18,6 +21,11 @@ time:
 health:
   expected_min_rows: 1
   max_staleness_hours: 2
+recoverability: snapshot
+rights: ogl
+history:
+  type: current_state_only
+  snapshot_now: true
 url: https://api.pvlive.uk/pvlive/api/v4/gsp/0?data_format=json
 format: json
 auth: none

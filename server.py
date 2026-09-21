@@ -13,7 +13,7 @@ Usage:
     python3 server.py once     # collect once
     python3 server.py status   # show state
 """
-import asyncio, hashlib, json, os, sqlite3, sys, time, urllib.request
+import asyncio, json, os, sys, time, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -21,6 +21,8 @@ from typing import Optional
 # Import collector types from layer1 (single source of truth)
 sys.path.insert(0, str(Path(__file__).parent))
 from layer1.collector import CollectorResult, CollectorStatus, record_coverage, store_raw, store_normalized
+from layer1.manifest import load_all_manifests
+from layer1.state import get_db, obs, state, get_last_success
 
 BASE = Path(__file__).parent
 DATA = BASE / "data"
@@ -40,69 +42,6 @@ if env_path.exists():
 
 for d in [RAW / "grid", RAW / "trades", RAW / "planning", DATA / "derived"]:
     d.mkdir(parents=True, exist_ok=True)
-
-# ─── DB ──────────────────────────────────────────────────────
-
-def get_db():
-    c = sqlite3.connect(str(DB), check_same_thread=False)
-    c.execute("PRAGMA journal_mode=WAL")
-    c.executescript("""
-    CREATE TABLE IF NOT EXISTS raw_blob (
-        raw_hash TEXT PRIMARY KEY,
-        storage_path TEXT NOT NULL,
-        bytes INT NOT NULL,
-        first_seen TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS raw_ingest (
-        retrieval_id TEXT PRIMARY KEY,
-        source TEXT NOT NULL,
-        dataset TEXT NOT NULL,
-        raw_hash TEXT NOT NULL,
-        observed_at TEXT NOT NULL,
-        row_count INT,
-        status TEXT
-    );
-    CREATE TABLE IF NOT EXISTS observation (
-        id TEXT PRIMARY KEY, source TEXT, metric TEXT, value TEXT,
-        unit TEXT, event_time TEXT, observed_at TEXT
-    );
-    CREATE TABLE IF NOT EXISTS collector_state (
-        source TEXT PRIMARY KEY, last_run TEXT, status TEXT,
-        rows INT, interval INT, runs INT DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS source_coverage (
-        source_id TEXT NOT NULL,
-        partition TEXT NOT NULL DEFAULT 'default',
-        expected_count INT NOT NULL,
-        collected_count INT NOT NULL,
-        unique_count INT,
-        coverage_ratio REAL NOT NULL,
-        complete BOOLEAN NOT NULL,
-        checked_at TEXT NOT NULL,
-        PRIMARY KEY (source_id, partition)
-    );
-    """)
-    c.commit()
-    return c
-
-def obs(c, source, metric, value, unit=None, event_time=None):
-    ts = datetime.now(timezone.utc).isoformat()
-    oid = hashlib.sha256(f"{source}:{metric}:{ts}:{value}".encode()).hexdigest()[:24]
-    c.execute("INSERT OR REPLACE INTO observation VALUES (?,?,?,?,?,?,?)",
-              (oid, source, metric, json.dumps(value, default=str), unit, event_time or ts, ts))
-    c.commit()
-
-def state(c, source, status, rows=None, interval=None):
-    c.execute("""INSERT INTO collector_state VALUES (?,?,?,?,?,1)
-              ON CONFLICT(source) DO UPDATE SET last_run=excluded.last_run,
-              status=excluded.status, rows=excluded.rows, runs=runs+1""",
-              (source, datetime.now(timezone.utc).isoformat(), status, rows, interval))
-    c.commit()
-
-def get_last_success(conn, source):
-    """Get last successful run time for a source (watermark for incremental fetch)."""
-    row = conn.execute("SELECT last_run FROM collector_state WHERE source=?", (source,)).fetchone()
-    return row[0] if row else None
 
 # ─── FETCH (with retry) ──────────────────────────────────────
 
@@ -167,20 +106,33 @@ def fetch_json(url, t=30, max_retries=3):
 
 # ─── SOURCE REGISTRY ──────────────────────────────────────────
 
-def load_sources():
-    """Load source registry from config/sources.yaml. Returns dict keyed by source ID."""
-    try:
-        import yaml
-        config_path = BASE / "config" / "sources.yaml"
-        with open(config_path) as f:
-            data = yaml.safe_load(f)
-        sources = data.get("sources", [])
-        return {s["id"]: s for s in sources if "id" in s}
-    except Exception as e:
-        log(f"Warning: could not load sources.yaml: {e}")
-        return {}
-
-SOURCES = load_sources()
+# Load layer1 manifests as the SINGLE SOURCE OF TRUTH
+_manifests = load_all_manifests()
+# Build a dict compatible with existing code (keyed by source ID)
+# Each value has .cadence, .stage, .domain, .priority etc. via manifest attributes
+SOURCES = {}
+for sid, m in _manifests.items():
+    SOURCES[sid] = {
+        "id": m.id,
+        "domain": m.domain,
+        "priority": m.priority,
+        "stage": m.stage,
+        "cadence": m.collection.cadence,
+        "mode": m.collection.mode,
+        "url": m.url,
+        "format": m.format,
+        "auth": m.auth,
+        "rights": m.rights,
+        "recoverability": m.recoverability,
+        "notes": m.notes,
+        "history": {
+            "type": m.history.type,
+            "earliest": m.history.earliest,
+            "partition": m.history.partition,
+        } if m.history else {},
+        "sic_clusters": m.sic_clusters,
+        "_manifest": m,  # keep full manifest accessible
+    }
 
 def cadence_to_seconds(cadence):
     """Convert cadence string from sources.yaml to seconds."""
@@ -417,23 +369,16 @@ def companies_house_capacity(conn):
     
     auth = base64.b64encode(f"{key}:".encode()).decode()
     
-    # Load SIC clusters from sources.yaml
-    try:
-        import yaml
-        with open(BASE / "config" / "sources.yaml") as f:
-            config = yaml.safe_load(f)
-        ch_config = next(s for s in config["sources"] if s["id"] == "ch_capacity")
-        sic_clusters = ch_config.get("sic_clusters", {})
-    except Exception:
-        # Fallback if config unreadable
-        sic_clusters = {
-            "electrical": ["43210"],
-            "hvac": ["43220"],
-            "solar": ["35110"],
-            "telecom": ["61100"],
-            "repair": ["95110"],
-            "construction": ["41100"],
-        }
+    # Load SIC clusters from manifest (single source of truth)
+    manifest = SOURCES.get("ch_capacity", {}).get("_manifest")
+    sic_clusters = manifest.sic_clusters if manifest and manifest.sic_clusters else {
+        "electrical": ["43210"],
+        "hvac": ["43220"],
+        "solar": ["35110"],
+        "telecom": ["61100"],
+        "repair": ["95110"],
+        "construction": ["41100"],
+    }
     
     warnings = []
     all_entities = []

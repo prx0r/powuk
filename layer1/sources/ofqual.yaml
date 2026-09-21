@@ -1,5 +1,8 @@
 id: ofqual
 garden: powuk
+domain: training
+priority: P0
+stage: raw
 authority:
   name: Ofqual
   url: https://www.gov.uk/government/organisations/ofqual
@@ -18,6 +21,12 @@ time:
 health:
   expected_min_rows: 1000
   max_staleness_hours: 48
+recoverability: canonical
+rights: ogl
+coverage:
+  strategy: api_total
+  expected_count: 52887
+  minimum_ratio: 0.95
 url: https://register-api.ofqual.gov.uk/api/qualifications?pageSize=500
 format: json
 auth: none

@@ -1,5 +1,8 @@
 id: evspark_trades
 garden: powuk
+domain: trades
+priority: P1
+stage: legacy
 authority:
   name: EvSpark / Local
   url: ""
@@ -18,7 +21,9 @@ time:
 health:
   expected_min_rows: 50
   max_staleness_hours: 48
+recoverability: snapshot
+rights: local
 source_file: /root/ab/businesses/evspark/receipts/ch_sweep_areas.csv
 format: csv
 auth: none
-notes: "Electrical/plumbing businesses by UK postcode area. Legacy local file."
+notes: "LEGACY — depends on /root/ab/ which violates clean-machine reproducibility. Not P0. Replace with Companies House baseline + official labour stats. Keep only as calibration fixture."

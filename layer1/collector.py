@@ -70,8 +70,11 @@ def store_raw(source_id: str, data: bytes, ext: str = "auto") -> dict:
     
     Raw = bytes retrieved from source, period.
     Nothing derived enters data/raw/.
+    
+    Returns dict with full_sha256 (database identity) and short_hash (filename).
     """
-    h = hashlib.sha256(data).hexdigest()[:16]
+    full_sha = hashlib.sha256(data).hexdigest()
+    short_hash = full_sha[:16]  # for filenames only
     now = datetime.now(timezone.utc)
     path_partition = now.strftime("%Y/%m/%d")
     
@@ -85,7 +88,7 @@ def store_raw(source_id: str, data: bytes, ext: str = "auto") -> dict:
         else:
             ext = "bin"
     
-    filename = f"{now.strftime('%H%M%S')}_{h}.{ext}"
+    filename = f"{now.strftime('%H%M%S')}_{short_hash}.{ext}"
     base = RAW_DIR / source_id / path_partition
     base.mkdir(parents=True, exist_ok=True)
     path = base / filename
@@ -93,7 +96,8 @@ def store_raw(source_id: str, data: bytes, ext: str = "auto") -> dict:
     
     return {
         "path": str(path),
-        "hash": h,
+        "full_sha256": full_sha,
+        "short_hash": short_hash,
         "bytes": len(data),
         "observed_at": now.isoformat(),
     }
@@ -142,23 +146,36 @@ def store_normalized(source_id: str, records: list[dict], fmt: str = "jsonl") ->
 def record_coverage(conn: sqlite3.Connection, source_id: str,
                     expected: int, collected: int, unique: int = None,
                     partition: str = "default"):
-    """Record source coverage. The honesty metric.
+    """Record source coverage. Preserves history in coverage_check, updates current view.
     
     coverage_ratio = collected / expected
-    If < 0.99, source is PARTIAL.
+    If < threshold, source is PARTIAL.
     """
     if unique is None:
         unique = collected
     ratio = collected / expected if expected > 0 else 0
     complete = ratio >= 0.99
+    now = datetime.now(timezone.utc).isoformat()
     
+    # Current view (latest only, for fast queries)
     conn.execute("""
         INSERT OR REPLACE INTO source_coverage
         (source_id, partition, expected_count, collected_count, unique_count,
          coverage_ratio, complete, checked_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (source_id, partition, expected, collected, unique, ratio,
-          complete, datetime.now(timezone.utc).isoformat()))
+          complete, now))
+    
+    # History (append-only, for regression detection)
+    check_id = hashlib.sha256(f"{source_id}:{partition}:{now}".encode()).hexdigest()[:24]
+    conn.execute("""
+        INSERT INTO coverage_check
+        (check_id, source_id, partition, expected_count, collected_count,
+         unique_count, coverage_ratio, checked_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (check_id, source_id, partition, expected, collected, unique,
+          ratio, now))
+    
     conn.commit()
 
 

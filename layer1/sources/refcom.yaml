@@ -1,5 +1,8 @@
 id: refcom
 garden: powuk
+domain: certification
+priority: P0
+stage: raw
 authority:
   name: REFCOM
   url: https://www.refcom.org.uk
@@ -18,6 +21,11 @@ time:
 health:
   expected_min_rows: 10000
   max_staleness_hours: 48
+recoverability: snapshot
+rights: crown_copyright
+history:
+  type: current_state_only
+  snapshot_now: true
 url: https://api.refcom.org.uk/api/PublicCompany/GetFgasActiveCertificateCount
 format: json
 auth: none

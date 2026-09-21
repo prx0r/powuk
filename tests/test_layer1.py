@@ -122,7 +122,8 @@ def test_store_raw():
         
         try:
             result = store_raw("test_source", b'{"test": "data"}')
-            assert result["hash"]
+            assert result["full_sha256"]
+            assert len(result["full_sha256"]) == 64, f"Expected full SHA-256, got {len(result['full_sha256'])} chars"
             assert result["bytes"] == 16
             assert Path(result["path"]).exists()
         finally:

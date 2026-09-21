@@ -1,5 +1,8 @@
 id: ashe_wages
 garden: powuk
+domain: labour
+priority: P0
+stage: raw
 authority:
   name: Office for National Statistics
   url: https://www.ons.gov.uk
@@ -18,6 +21,11 @@ time:
 health:
   expected_min_rows: 100
   max_staleness_hours: 48
+recoverability: canonical
+rights: ogl
+history:
+  type: embedded_full_history
+  partition: release
 url: https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/earningsandworkinghours/datasets/regionbyoccupation2digitsocashetable3/2025provisional/ashetable32025provisional.zip
 format: xlsx
 auth: none

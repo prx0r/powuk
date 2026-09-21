@@ -1,5 +1,8 @@
 id: apar
 garden: powuk
+domain: training
+priority: P0
+stage: normalized
 authority:
   name: Education and Skills Funding Agency
   url: https://www.gov.uk/government/organisations/education-and-skills-funding-agency
@@ -18,6 +21,11 @@ time:
 health:
   expected_min_rows: 1000
   max_staleness_hours: 48
+recoverability: canonical
+rights: ogl
+history:
+  type: current_state_only
+  snapshot_now: true
 url: https://download.apprenticeships.education.gov.uk/apar/downloadcsv?filename=apar.csv
 format: csv
 auth: none

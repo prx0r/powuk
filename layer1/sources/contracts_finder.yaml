@@ -1,5 +1,8 @@
 id: contracts_finder
 garden: powuk
+domain: procurement
+priority: P0
+stage: raw
 authority:
   name: Contracts Finder
   url: https://www.contractsfinder.service.gov.uk
@@ -20,6 +23,11 @@ time:
 health:
   expected_min_rows: 10
   max_staleness_hours: 4
+recoverability: snapshot
+rights: ogl
+history:
+  type: paginated_api
+  partition: month
 url: https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search
 format: json
 auth: none

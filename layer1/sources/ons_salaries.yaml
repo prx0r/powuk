@@ -1,5 +1,8 @@
 id: ons_salaries
 garden: powuk
+domain: labour
+priority: P0
+stage: raw
 authority:
   name: Office for National Statistics
   url: https://www.ons.gov.uk
@@ -19,6 +22,12 @@ time:
 health:
   expected_min_rows: 1000
   max_staleness_hours: 48
+recoverability: canonical
+rights: ogl
+history:
+  type: embedded_full_history
+  earliest: "2017-01"
+  partition: release
 url: https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/earningsandworkinghours/datasets/onlinejobadvertssalariesuk/january2017tomay2025/onlinejobadvertssalariesuk.xlsx
 format: xlsx
 auth: none

@@ -1,5 +1,8 @@
 id: neso_generation
 garden: powuk
+domain: grid
+priority: P0
+stage: normalized
 authority:
   name: National Grid ESO
   url: https://www.neso.energy
@@ -19,6 +22,12 @@ time:
 health:
   expected_min_rows: 100
   max_staleness_hours: 2
+recoverability: canonical
+rights: ogl
+history:
+  type: embedded_full_history
+  earliest: "2009"
+  partition: release
 url: https://api.neso.energy/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv
 format: csv
 auth: none
