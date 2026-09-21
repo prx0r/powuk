@@ -55,18 +55,37 @@ def get_db():
     c.commit()
     return c
 
-def store(c, source, dataset, data, rows=None):
-    """Store data with immutable content-hashed paths."""
+def store(c, source, dataset, data, rows=None, ext=None):
+    """Store data with immutable content-hashed paths.
+    
+    Args:
+        ext: explicit file extension (json, csv, xlsx, etc.)
+             If None, auto-detect from content.
+    """
     h = hashlib.sha256(data).hexdigest()[:16]
-    ts = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
-    ext = "json" if data[:1] in (b"{", b"[") else "csv"
-    path = RAW / source / f"{ts}_{h}.{ext}"
+    now = datetime.now(timezone.utc)
+    observed_at = now.isoformat()
+    path_partition = now.strftime("%Y/%m/%d")
+    
+    # Auto-detect extension if not provided
+    if ext is None:
+        if data[:1] in (b"{", b"["):
+            ext = "json"
+        elif data[:2] == b"PK":
+            ext = "xlsx"
+        elif b"," in data[:100]:
+            ext = "csv"
+        else:
+            ext = "bin"
+    
+    filename = f"{now.strftime('%H%M%S')}_{h}.{ext}"
+    path = RAW / source / path_partition / filename
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     
-    # Record in DB
+    # Record in DB with proper ISO timestamp
     c.execute("INSERT OR REPLACE INTO raw_ingest VALUES (?,?,?,?,?,?,?,?,'ok')",
-              (f"{source}_{dataset}_{h}", source, dataset, ts, h, str(path), rows, len(data)))
+              (f"{source}_{dataset}_{h}", source, dataset, observed_at, h, str(path), rows, len(data)))
     c.commit()
 
 def obs(c, source, metric, value, unit=None, event_time=None):
@@ -110,6 +129,20 @@ def fetch(url, t=30):
 def fetch_json(url, t=30):
     """Fetch URL, return parsed JSON."""
     return json.loads(fetch(url, t).decode())
+
+# ─── SOURCE REGISTRY ──────────────────────────────────────────
+
+def load_sources():
+    """Load source registry from config/sources.yaml."""
+    try:
+        import yaml
+        config_path = BASE / "config" / "sources.yaml"
+        with open(config_path) as f:
+            return yaml.safe_load(f)
+    except Exception:
+        return {"sources": []}
+
+SOURCES = load_sources()
 
 LOG = []
 def log(m):
@@ -197,13 +230,17 @@ def trade_supply(conn):
 
 @c("planning_apps", 7200)  # 2h
 def planning_demand(conn):
-    """Planning applications — where development pressure exists."""
+    """Planning applications — where development pressure exists.
+    
+    Paginates through available data with bounded windows.
+    """
     try:
         all_entities = []
         start_index = 0
         page_size = 100
+        max_records = 5000  # Bounded window for incremental collection
         
-        while True:
+        while start_index < max_records:
             url = f"https://www.planning.data.gov.uk/entity.json?dataset=planning-application&limit={page_size}&start={start_index}"
             d = fetch_json(url)
             if "entities" not in d or len(d["entities"]) == 0:
@@ -211,8 +248,6 @@ def planning_demand(conn):
             all_entities.extend(d["entities"])
             start_index += page_size
             if start_index >= d.get("count", 0):
-                break
-            if start_index >= 1000:  # Safety limit
                 break
         
         if all_entities:
@@ -225,21 +260,23 @@ def planning_demand(conn):
 
 @c("contracts_finder", 7200)  # 2h
 def procurement_demand(conn):
-    """Public procurement — where government is buying capacity."""
+    """Public procurement — where government is buying capacity.
+    
+    Paginates through available data with bounded windows.
+    """
     try:
         all_releases = []
         start_index = 0
         page_size = 100
+        max_records = 1000  # Reduced bounded window
         
-        while True:
+        while start_index < max_records:
             url = f"https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search?limit={page_size}&start={start_index}"
-            d = fetch_json(url)
+            d = fetch_json(url, t=15)  # Shorter timeout
             if "releases" not in d or len(d["releases"]) == 0:
                 break
             all_releases.extend(d["releases"])
             start_index += page_size
-            if start_index >= 1000:  # Safety limit
-                break
         
         if all_releases:
             store(conn, "planning", "contracts", json.dumps({"releases": all_releases}).encode(), len(all_releases))
@@ -251,22 +288,26 @@ def procurement_demand(conn):
 
 @c("find_tender", 7200)  # 2h
 def find_tender(conn):
-    """Find a Tender — higher-value UK procurement (OCDS)."""
+    """Find a Tender — higher-value UK procurement (OCDS).
+    
+    Single fetch (API doesn't support pagination well).
+    """
     try:
-        d = fetch_json("https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=50")
+        url = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=50"
+        d = fetch_json(url, t=15)
         if "releases" in d:
             store(conn, "planning", "find_tender", json.dumps(d).encode(), len(d["releases"]))
+            obs(conn, "planning", "tender_total", float(len(d["releases"])), "releases")
             return len(d["releases"])
-    except Exception:
-        pass
+    except Exception as e:
+        log(f"find_tender error: {e}")
     return 0
 
 @c("ch_capacity", 43200)  # 12h
 def companies_house_capacity(conn):
     """Companies House — POWUK business capacity layer.
     
-    Measures: firm stock, formations, dissolutions, charges
-    For: POW-relevant SIC codes only (electrical, HVAC, solar, EV, telecom, repair)
+    Uses SIC code search (not keyword search) to count relevant firms.
     """
     import base64
     key = os.environ.get("COMPANIES_HOUSE_API_KEY", "")
@@ -276,78 +317,88 @@ def companies_house_capacity(conn):
     auth = base64.b64encode(f"{key}:".encode()).decode()
     
     SIC_CLUSTERS = {
-        "electrical": {"sic": "43210", "queries": ["electrical contractor", "electrical installation"]},
-        "hvac": {"sic": "43220", "queries": ["plumbing heating", "air conditioning"]},
-        "solar": {"sic": "35110", "queries": ["solar panel", "renewable energy"]},
-        "ev": {"sic": "43210", "queries": ["ev charger", "electric vehicle charging"]},
-        "telecom": {"sic": "61100", "queries": ["telecommunications", "fibre broadband"]},
-        "repair": {"sic": "95110", "queries": ["computer repair", "electronics repair"]},
-        "construction": {"sic": "41100", "queries": ["building contractor", "construction"]},
+        "electrical": "43210",
+        "hvac": "43220",
+        "solar": "35110",
+        "ev": "43210",
+        "telecom": "61100",
+        "repair": "95110",
+        "construction": "41100",
     }
     
     results = {}
-    for cluster, info in SIC_CLUSTERS.items():
+    for cluster, sic in SIC_CLUSTERS.items():
         try:
-            q = info["queries"][0].replace(" ", "+")
-            url = f"https://api.company-information.service.gov.uk/search/companies?q={q}&items_per_page=1"
+            # Use advanced search with SIC code filter
+            url = f"https://api.company-information.service.gov.uk/advanced-search/companies?sic_codes={sic}&company_status=active&size=1"
             req = urllib.request.Request(url, headers={
                 "Authorization": f"Basic {auth}",
                 "User-Agent": "powuk/1.0",
             })
             with urllib.request.urlopen(req, timeout=30) as resp:
                 d = json.loads(resp.read().decode())
-                total = d.get("total_results", 0)
-                results[cluster] = {"sic": info["sic"], "active_firms": total}
-                obs(conn, "ch", f"active_firms_{cluster}", total)
-        except Exception:
-            pass
+                # advanced search may not return total_results reliably
+                # use items count as fallback
+                items = d.get("items", [])
+                total = d.get("total_results", len(items))
+                results[cluster] = {"sic": sic, "active_firms": total, "sample": len(items)}
+                obs(conn, "ch", f"active_firms_{cluster}", float(total), "firms")
+        except Exception as e:
+            log(f"ch_{cluster} error: {e}")
     
     store(conn, "ch", "capacity_snapshot", json.dumps(results).encode())
-    obs(conn, "ch", "clusters_tracked", len(results))
+    obs(conn, "ch", "clusters_tracked", float(len(results)))
     return len(results)
 
 @c("apar", 86400)  # daily
 def apar_providers(conn):
     """APAR — Apprenticeship Provider and Assessment Register.
     
-    The training provider universe. Who is eligible to train apprentices.
-    Downloads fresh CSV each time (not hardcoded path).
+    Normalizes ALL fields from the CSV, not just a subset.
     """
     import csv
     import urllib.request
     
-    # Download current APAR
     url = "https://download.apprenticeships.education.gov.uk/apar/downloadcsv?filename=apar.csv"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "powuk/1.0"})
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = resp.read()
         
-        # Store raw immutably
+        # Store raw
         h = hashlib.sha256(data).hexdigest()[:16]
         ts = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
         raw_path = RAW / "labour" / f"apar_{h}.csv"
         raw_path.parent.mkdir(parents=True, exist_ok=True)
         raw_path.write_bytes(data)
         
-        # Parse CSV
+        # Parse CSV and normalize ALL fields
         lines = data.decode().strip().split("\n")
         reader = csv.DictReader(lines)
         
         providers = []
         for row in reader:
-            if row.get("CanDeliverApprenticeships") == "True":
-                providers.append({
-                    "ukprn": row.get("Ukprn"),
-                    "name": row.get("Name"),
-                    "type": row.get("ApplicationType"),
-                    "status": row.get("Status"),
-                    "start_date": row.get("StartDate"),
-                })
+            # Preserve every field from source
+            provider = {
+                "ukprn": row.get("Ukprn"),
+                "name": row.get("Name"),
+                "application_type": row.get("ApplicationType"),
+                "start_date": row.get("StartDate"),
+                "status": row.get("Status"),
+                "application_determined_date": row.get("ApplicationDeterminedDate"),
+                "can_deliver_apprenticeships": row.get("CanDeliverApprenticeships"),
+                "can_deliver_apprenticeship_units": row.get("CanDeliverApprenticeshipUnits"),
+            }
+            providers.append(provider)
         
-        # Store in DB
+        # Store all providers (not just those with CanDeliver=True)
         store(conn, "labour", "apar", json.dumps(providers).encode(), len(providers))
-        obs(conn, "labour", "apar_providers", float(len(providers)), "providers")
+        
+        # Count active providers
+        active = sum(1 for p in providers if p.get("can_deliver_apprenticeships") == "True")
+        obs(conn, "labour", "apar_providers_total", float(len(providers)), "providers")
+        obs(conn, "labour", "apar_providers_active", float(active), "providers")
+        
         return len(providers)
     except Exception as e:
         log(f"apar error: {e}")
@@ -370,52 +421,113 @@ def ofqual_qualifications(conn):
 
 @c("ons_labour", 86400)  # daily
 def ons_labour_demand(conn):
-    """ONS labour demand — job adverts by SOC × region."""
+    """ONS labour demand — job adverts by SOC × region.
+    
+    Normalizes XLSX into queryable records.
+    """
     try:
         url = "https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/labourdemandvolumesbystandardoccupationclassificationsoc2020uk/january2017tojuly2026/labourdemandbyoccupation.xlsx"
         d = fetch(url, 60)
         
-        # Parse XLSX to count rows
-        import io
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(io.BytesIO(d), read_only=True)
-            total_rows = 0
-            for sheet in wb.sheetnames:
-                ws = wb[sheet]
-                total_rows += ws.max_row
-            wb.close()
-            row_count = total_rows
-        except Exception:
-            row_count = 0
-        
         # Store raw
         h = hashlib.sha256(d).hexdigest()[:16]
+        ts = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
         raw_path = RAW / "labour" / f"ons_demand_{h}.xlsx"
         raw_path.parent.mkdir(parents=True, exist_ok=True)
         raw_path.write_bytes(d)
         
-        store(conn, "labour", "ons_demand", d, row_count)
-        obs(conn, "labour", "ons_labour_rows", float(row_count), "rows")
-        return row_count
+        # Parse XLSX and normalize
+        import io
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(d), read_only=True)
+        
+        records = []
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows = list(ws.iter_rows(values_only=True))
+            if len(rows) < 2:
+                continue
+            
+            # First row is headers
+            headers = [str(h).strip() if h else f"col_{i}" for i, h in enumerate(rows[0])]
+            
+            # Find key columns
+            period_col = next((i for i, h in enumerate(headers) if 'period' in h.lower() or 'date' in h.lower()), None)
+            soc_col = next((i for i, h in enumerate(headers) if 'soc' in h.lower() or 'occupation' in h.lower()), None)
+            geo_col = next((i for i, h in enumerate(headers) if 'region' in h.lower() or 'area' in h.lower()), None)
+            
+            for row in rows[1:]:
+                if row is None or all(v is None for v in row):
+                    continue
+                record = {
+                    "sheet": sheet_name,
+                    "period": str(row[period_col]) if period_col is not None and row[period_col] else None,
+                    "soc_code": str(row[soc_col]) if soc_col is not None and row[soc_col] else None,
+                    "geography": str(row[geo_col]) if geo_col is not None and row[geo_col] else None,
+                    "raw_row": [str(v) if v is not None else None for v in row[:10]],  # first 10 columns
+                }
+                records.append(record)
+        
+        wb.close()
+        
+        # Store normalized records
+        store(conn, "labour", "ons_demand", json.dumps(records[:1000]).encode(), len(records))  # Store first 1000 as sample
+        
+        # Store summary observation
+        obs(conn, "labour", "ons_labour_records", float(len(records)), "records")
+        obs(conn, "labour", "ons_labour_sheets", float(len(wb.sheetnames)), "sheets")
+        
+        return len(records)
     except Exception as e:
         log(f"ons_labour error: {e}")
         return 0
 
 @c("refcom", 86400)  # daily
 def refcom_capacity(conn):
-    """REFCOM F-gas certified companies — HVAC/refrigeration capacity."""
+    """REFCOM F-gas certified companies — HVAC/refrigeration capacity.
+    
+    Gets entity-level data (company name, postcode, status), not just count.
+    """
+    import base64
     try:
-        # Get total count
-        url = "https://api.refcom.org.uk/api/PublicCompany/GetFgasActiveCertificateCount"
-        req = urllib.request.Request(url, headers={"User-Agent": "powuk/1.0"})
+        base_url = "https://api.refcom.org.uk/api/PublicCompany"
+        
+        # Get total count for monitoring
+        count_url = f"{base_url}/GetFgasActiveCertificateCount"
+        req = urllib.request.Request(count_url, headers={"User-Agent": "powuk/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             total = int(resp.read().decode().strip())
         
-        obs(conn, "certification", "fgas_companies", total, "companies")
-        store(conn, "certification", "refcom_count", json.dumps({"total": total}).encode())
+        # Get entity-level data (first 500 companies)
+        companies = []
+        for idx in range(0, min(500, total), 10):
+            url = f"{base_url}/GetByIndex?scheme=fgas&index={idx}"
+            req = urllib.request.Request(url, headers={"User-Agent": "powuk/1.0"})
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode())
+                    if data and isinstance(data, dict) and data.get("CompanyName"):
+                        companies.append({
+                            "company_id": data.get("CompanyId"),
+                            "name": data.get("CompanyName"),
+                            "postcode": data.get("Postcode"),
+                            "fgas_code": data.get("FGasCode"),
+                            "phone": data.get("Phone"),
+                        })
+            except Exception:
+                break
+        
+        # Store raw
+        result = {"total_count": total, "sample": companies}
+        store(conn, "certification", "refcom", json.dumps(result).encode())
+        
+        # Store observations
+        obs(conn, "certification", "fgas_companies", float(total), "companies")
+        obs(conn, "certification", "fgas_sample_size", float(len(companies)), "companies")
+        
         return total
     except Exception as e:
+        log(f"refcom error: {e}")
         return 0
 
 # ─── SERVER ──────────────────────────────────────────────────

@@ -1,6 +1,5 @@
 # powuk source registry
-
-> Machine-readable configuration for all data sources.
+# Machine-readable configuration for all data sources.
 
 sources:
   # GRID
