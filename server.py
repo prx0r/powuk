@@ -530,6 +530,67 @@ def refcom_capacity(conn):
         log(f"refcom error: {e}")
         return 0
 
+@c("ashe_wages", 86400)  # daily
+def ashe_wages(conn):
+    """ASHE — Annual Survey of Hours and Earnings.
+    
+    Wage/shadow-price proxy for skilled labour.
+    Table 3: Region × SOC2 × earnings
+    """
+    try:
+        import zipfile
+        import io
+        
+        # Download ASHE Table 3
+        url = "https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/earningsandworkinghours/datasets/regionbyoccupation2digitsocashetable3/2025provisional/ashetable32025provisional.zip"
+        d = fetch(url, 60)
+        
+        # Store raw
+        h = hashlib.sha256(d).hexdigest()[:16]
+        ts = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
+        raw_path = RAW / "labour" / f"ashe_table3_{h}.zip"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_bytes(d)
+        
+        # Extract and parse XLSX
+        import openpyxl
+        with zipfile.ZipFile(io.BytesIO(d)) as zf:
+            xlsx_files = [f for f in zf.namelist() if f.endswith('.xlsx')]
+            if xlsx_files:
+                with zf.open(xlsx_files[0]) as xlsx_file:
+                    wb = openpyxl.load_workbook(io.BytesIO(xlsx_file.read()), read_only=True)
+                    
+                    records = []
+                    for sheet_name in wb.sheetnames:
+                        ws = wb[sheet_name]
+                        rows = list(ws.iter_rows(values_only=True))
+                        if len(rows) < 3:
+                            continue
+                        
+                        # Parse ASHE format (complex header structure)
+                        for row in rows[2:]:  # Skip headers
+                            if row and row[0]:
+                                record = {
+                                    "region": str(row[0]) if row[0] else None,
+                                    "soc_code": str(row[1]) if len(row) > 1 and row[1] else None,
+                                    "occupation": str(row[2]) if len(row) > 2 and row[2] else None,
+                                    "hourly_pay": float(row[3]) if len(row) > 3 and row[3] and isinstance(row[3], (int, float)) else None,
+                                    "annual_pay": float(row[4]) if len(row) > 4 and row[4] and isinstance(row[4], (int, float)) else None,
+                                }
+                                if record["region"] and record["soc_code"]:
+                                    records.append(record)
+                    
+                    wb.close()
+        
+        # Store normalized
+        store(conn, "labour", "ashe_wages", json.dumps(records[:500]).encode(), len(records))
+        obs(conn, "labour", "ashe_wage_records", float(len(records)), "records")
+        
+        return len(records)
+    except Exception as e:
+        log(f"ashe_wages error: {e}")
+        return 0
+
 # ─── SERVER ──────────────────────────────────────────────────
 
 async def run_one(name, fn, interval, conn):
