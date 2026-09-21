@@ -1,0 +1,26 @@
+id: find_tender
+garden: powuk
+authority:
+  name: Find a Tender
+  url: https://www.find-tender.service.gov.uk
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: 2h
+  mode: paginated
+  page_size: 50
+  max_pages: 50
+storage:
+  raw: true
+  append_only: true
+  format: json
+time:
+  source_timestamp: true
+  observed_at: true
+health:
+  expected_min_rows: 10
+  max_staleness_hours: 4
+url: https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages
+format: json
+auth: none
+notes: "Higher-value UK procurement notices."

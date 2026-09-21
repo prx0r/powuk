@@ -1,0 +1,26 @@
+id: planning_apps
+garden: powuk
+authority:
+  name: Planning Data
+  url: https://www.planning.data.gov.uk
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: 2h
+  mode: paginated
+  page_size: 100
+  max_pages: 50
+storage:
+  raw: true
+  append_only: true
+  format: json
+time:
+  source_timestamp: true
+  observed_at: true
+health:
+  expected_min_rows: 100
+  max_staleness_hours: 4
+url: https://www.planning.data.gov.uk/entity.json?dataset=planning-application
+format: json
+auth: none
+notes: "England planning applications. Incomplete LPA coverage."

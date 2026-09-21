@@ -1,0 +1,25 @@
+id: neso_generation
+garden: powuk
+authority:
+  name: National Grid ESO
+  url: https://www.neso.energy
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: hourly
+  backfill_from: "2009"
+  mode: backfill
+storage:
+  raw: true
+  append_only: true
+  format: csv
+time:
+  source_timestamp: true
+  observed_at: true
+health:
+  expected_min_rows: 100
+  max_staleness_hours: 2
+url: https://api.neso.energy/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv
+format: csv
+auth: none
+notes: "UK generation by fuel type. Wind, solar, gas, nuclear, carbon intensity."

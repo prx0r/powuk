@@ -1,0 +1,24 @@
+id: evspark_trades
+garden: powuk
+authority:
+  name: EvSpark / Local
+  url: ""
+  license: local
+  redistribution: allowed
+collection:
+  cadence: daily
+  mode: snapshot
+storage:
+  raw: true
+  append_only: true
+  format: csv
+time:
+  source_timestamp: false
+  observed_at: true
+health:
+  expected_min_rows: 50
+  max_staleness_hours: 48
+source_file: /root/ab/businesses/evspark/receipts/ch_sweep_areas.csv
+format: csv
+auth: none
+notes: "Electrical/plumbing businesses by UK postcode area. Legacy local file."

@@ -1,0 +1,23 @@
+id: ch_capacity
+garden: powuk
+authority:
+  name: Companies House
+  url: https://www.gov.uk/government/organisations/companies-house
+  license: crown_copyright
+  redistribution: allowed
+collection:
+  cadence: 12h
+  mode: snapshot
+storage:
+  raw: true
+  append_only: true
+  format: json
+time:
+  source_timestamp: true
+  observed_at: true
+health:
+  expected_min_rows: 1
+  max_staleness_hours: 24
+api: companies_house
+auth: api_key
+notes: "UK companies by SIC code. Uses size=5000 and counts returned items."

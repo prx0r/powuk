@@ -1,0 +1,25 @@
+id: neso_demand
+garden: powuk
+authority:
+  name: National Grid ESO
+  url: https://www.neso.energy
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: hourly
+  backfill_from: "2009"
+  mode: backfill
+storage:
+  raw: true
+  append_only: true
+  format: csv
+time:
+  source_timestamp: true
+  observed_at: true
+health:
+  expected_min_rows: 100
+  max_staleness_hours: 2
+url: https://api.neso.energy/dataset/7a12172a-939c-404c-b581-a6128b74f588/resource/177f6fa4-ae49-4182-81ea-0c6b35f26ca6/download/demanddataupdate.csv
+format: csv
+auth: none
+notes: "UK half-hourly electricity demand. Embedded wind/solar, interconnector flows."

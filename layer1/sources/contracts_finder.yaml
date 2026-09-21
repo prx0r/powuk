@@ -1,0 +1,26 @@
+id: contracts_finder
+garden: powuk
+authority:
+  name: Contracts Finder
+  url: https://www.contractsfinder.service.gov.uk
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: 2h
+  mode: paginated
+  page_size: 100
+  max_pages: 50
+storage:
+  raw: true
+  append_only: true
+  format: json
+time:
+  source_timestamp: true
+  observed_at: true
+health:
+  expected_min_rows: 10
+  max_staleness_hours: 4
+url: https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search
+format: json
+auth: none
+notes: "UK public procurement notices in OCDS format."

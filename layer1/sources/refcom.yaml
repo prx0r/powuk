@@ -1,0 +1,24 @@
+id: refcom
+garden: powuk
+authority:
+  name: REFCOM
+  url: https://www.refcom.org.uk
+  license: crown_copyright
+  redistribution: allowed
+collection:
+  cadence: daily
+  mode: snapshot
+storage:
+  raw: true
+  append_only: true
+  format: json
+time:
+  source_timestamp: false
+  observed_at: true
+health:
+  expected_min_rows: 10000
+  max_staleness_hours: 48
+url: https://api.refcom.org.uk/api/PublicCompany/GetFgasActiveCertificateCount
+format: json
+auth: none
+notes: "F-gas certified companies. Count + entity-level data (company, postcode, fgas_code)."

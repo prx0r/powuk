@@ -1,0 +1,24 @@
+id: ofqual
+garden: powuk
+authority:
+  name: Ofqual
+  url: https://www.gov.uk/government/organisations/ofqual
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: daily
+  mode: snapshot
+storage:
+  raw: true
+  append_only: true
+  format: json
+time:
+  source_timestamp: false
+  observed_at: true
+health:
+  expected_min_rows: 1000
+  max_staleness_hours: 48
+url: https://register-api.ofqual.gov.uk/api/qualifications?pageSize=500
+format: json
+auth: none
+notes: "UK regulated qualifications. Active count filter may be wrong."

@@ -1,0 +1,24 @@
+id: apar
+garden: powuk
+authority:
+  name: Education and Skills Funding Agency
+  url: https://www.gov.uk/government/organisations/education-and-skills-funding-agency
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: daily
+  mode: snapshot
+storage:
+  raw: true
+  append_only: true
+  format: csv
+time:
+  source_timestamp: false
+  observed_at: true
+health:
+  expected_min_rows: 1000
+  max_staleness_hours: 48
+url: https://download.apprenticeships.education.gov.uk/apar/downloadcsv?filename=apar.csv
+format: csv
+auth: none
+notes: "Apprenticeship Provider and Assessment Register. 1,432 eligible providers."

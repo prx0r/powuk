@@ -1,0 +1,24 @@
+id: pvlive
+garden: powuk
+authority:
+  name: Sheffield Solar / PV Live
+  url: https://www.pvlive.uk
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: hourly
+  mode: snapshot
+storage:
+  raw: true
+  append_only: true
+  format: json
+time:
+  source_timestamp: true
+  observed_at: true
+health:
+  expected_min_rows: 1
+  max_staleness_hours: 2
+url: https://api.pvlive.uk/pvlive/api/v4/gsp/0?data_format=json
+format: json
+auth: none
+notes: "Actual UK solar PV generation at GSP level."
