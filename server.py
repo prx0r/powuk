@@ -85,47 +85,6 @@ def get_db():
     c.commit()
     return c
 
-def store(c, source, dataset, data, rows=None, ext=None):
-    """Store data with immutable content-hashed paths.
-    
-    Separates raw_blob (deduplicated) from raw_ingest (every retrieval event).
-    """
-    h = hashlib.sha256(data).hexdigest()[:16]
-    now = datetime.now(timezone.utc)
-    observed_at = now.isoformat()
-    path_partition = now.strftime("%Y/%m/%d")
-    
-    # Auto-detect extension if not provided
-    if ext is None:
-        if data[:1] in (b"{", b"["):
-            ext = "json"
-        elif data[:2] == b"PK":
-            ext = "xlsx"
-        elif b"," in data[:100]:
-            ext = "csv"
-        else:
-            ext = "bin"
-    
-    filename = f"{now.strftime('%H%M%S')}_{h}.{ext}"
-    path = RAW / source / path_partition / filename
-    path.parent.mkdir(parents=True, exist_ok=True)
-    
-    # Deduplicate blob storage — same content, same file
-    existing = c.execute("SELECT storage_path FROM raw_blob WHERE raw_hash=?", (h,)).fetchone()
-    if existing:
-        storage_path = existing[0]
-    else:
-        path.write_bytes(data)
-        storage_path = str(path)
-    
-    # Always record retrieval event (never overwrite)
-    retrieval_id = f"{source}_{dataset}_{h}_{now.strftime('%H%M%S%f')}"
-    c.execute("INSERT OR IGNORE INTO raw_blob VALUES (?,?,?,?)",
-              (h, storage_path, len(data), observed_at))
-    c.execute("INSERT INTO raw_ingest VALUES (?,?,?,?,?,?,'ok')",
-              (retrieval_id, source, dataset, h, observed_at, rows))
-    c.commit()
-
 def obs(c, source, metric, value, unit=None, event_time=None):
     ts = datetime.now(timezone.utc).isoformat()
     oid = hashlib.sha256(f"{source}:{metric}:{ts}:{value}".encode()).hexdigest()[:24]
@@ -269,7 +228,7 @@ def grid_demand(conn):
     """
     d = fetch("https://api.neso.energy/dataset/7a12172a-939c-404c-b581-a6128b74f588/resource/177f6fa4-ae49-4182-81ea-0c6b35f26ca6/download/demanddataupdate.csv")
     lines = d.decode().strip().split("\n")
-    store(conn, "grid", "neso_demand", d, len(lines)-1)
+    store_raw("neso_demand", d, "csv")
     
     # Store last 48 observations (24h of half-hourly data)
     count = 0
@@ -293,7 +252,7 @@ def grid_generation(conn):
     """
     d = fetch("https://api.neso.energy/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv", 60)
     lines = d.decode().strip().split("\n")
-    store(conn, "grid", "neso_generation", d, len(lines)-1)
+    store_raw("neso_generation", d, "csv")
     
     # Store last 48 observations (24h of half-hourly data)
     count = 0
@@ -316,7 +275,7 @@ def grid_generation(conn):
 def grid_solar(conn):
     """Actual UK solar generation — embedded generation affects local headroom."""
     d = fetch_json("https://api.pvlive.uk/pvlive/api/v4/gsp/0?data_format=json")
-    store(conn, "grid", "pvlive", json.dumps(d).encode())
+    store_raw("pvlive", json.dumps(d).encode(), "json")
     if isinstance(d, dict) and d.get("data"):
         for row in d["data"]:
             if row[0] == 0:
@@ -330,7 +289,7 @@ def grid_dno_flex(conn):
     Stage: discovery — currently fetches dataset catalogue, not actual flexibility data.
     """
     d = fetch_json("https://ukpowernetworks.opendatasoft.com/api/explore/v2.1/catalog/datasets?limit=50")
-    store(conn, "grid", "ukpn_catalog", json.dumps(d).encode())
+    store_raw("ukpn_flex", json.dumps(d).encode(), "json")
     return CollectorResult.success(rows=1, warnings=["Stage discovery: fetched catalogue metadata only, not flexibility data"])
 
 # TRADES: Are there enough people to do the work?
@@ -345,7 +304,7 @@ def trade_supply(conn):
     if not src.exists():
         return CollectorResult.blocked("Legacy source file not found: /root/ab/...")
     d = src.read_bytes()
-    store(conn, "trades", "evspark_areas", d)
+    store_raw("evspark_trades", d, "csv")
     lines = d.decode().strip().split("\n")
     total = sum(int(l.split(",")[1]) for l in lines[1:] if len(l.split(",")) > 1)
     obs(conn, "trades", "uk_electrical_businesses", total)
@@ -477,6 +436,7 @@ def companies_house_capacity(conn):
         }
     
     warnings = []
+    all_entities = []
     results = {}
     for cluster, sic_codes in sic_clusters.items():
         try:
@@ -504,23 +464,30 @@ def companies_house_capacity(conn):
                 cn = item.get("company_number")
                 if cn and cn not in seen:
                     seen.add(cn)
-                    unique.append({
+                    entity = {
                         "company_number": cn,
                         "name": item.get("company_name"),
                         "status": item.get("company_status"),
                         "sic_codes": item.get("sic_codes", []),
                         "incorporation_date": item.get("incorporation_date"),
                         "postcode": item.get("registered_office_address", {}).get("postal_code"),
-                    })
+                        "cluster": cluster,
+                    }
+                    unique.append(entity)
+                    all_entities.append(entity)
             
             results[cluster] = {"sic_codes": sic_codes, "active_firms": len(unique)}
             obs(conn, "ch", f"active_firms_{cluster}", float(len(unique)), "firms")
         except Exception as e:
             warnings.append(f"{cluster}: {str(e)[:80]}")
     
-    # Store normalized via store_normalized
+    # Store entity-level records (not just counts)
+    if all_entities:
+        store_normalized("ch_capacity", all_entities)
+    
+    # Also store cluster summary
     cluster_records = [{"cluster": cluster, **info} for cluster, info in results.items()]
-    store_normalized("ch_capacity", cluster_records)
+    store_normalized("ch_capacity_summary", cluster_records)
     
     obs(conn, "ch", "clusters_tracked", float(len(results)))
     return CollectorResult.success(rows=len(results), warnings=warnings)
@@ -587,9 +554,15 @@ def ofqual_qualifications(conn):
         # Store normalized via store_normalized
         store_normalized("ofqual", all_results)
         
-        active = [q for q in all_results if q.get("status") == "Awarded"]
+        # Count by status for observability
+        status_counts = {}
+        for q in all_results:
+            s = q.get("status", "unknown")
+            status_counts[s] = status_counts.get(s, 0) + 1
+        
         obs(conn, "labour", "uk_qualifications_total", float(len(all_results)))
-        obs(conn, "labour", "uk_qualifications_active", len(active))
+        for s, count in status_counts.items():
+            obs(conn, "labour", f"uk_qualifications_{s.lower()}", float(count))
         
         # Coverage: Ofqual has ~52,887 total qualifications
         record_coverage(conn, "ofqual", expected=52887, collected=len(all_results))
@@ -790,10 +763,11 @@ def ons_job_skills(conn):
         for row in rows[1:]:
             if row is None or all(v is None for v in row):
                 continue
-            records.append({
-                "sheet": sheet_name,
-                "raw_row": [str(v) if v is not None else None for v in row[:15]],
-            })
+            record = {"sheet": sheet_name}
+            for i, h in enumerate(headers):
+                if i < len(row) and row[i] is not None:
+                    record[h] = str(row[i])
+            records.append(record)
     wb.close()
     
     # Store normalized via store_normalized
@@ -831,10 +805,11 @@ def ons_job_salaries(conn):
         for row in rows[1:]:
             if row is None or all(v is None for v in row):
                 continue
-            records.append({
-                "sheet": sheet_name,
-                "raw_row": [str(v) if v is not None else None for v in row[:15]],
-            })
+            record = {"sheet": sheet_name}
+            for i, h in enumerate(headers):
+                if i < len(row) and row[i] is not None:
+                    record[h] = str(row[i])
+            records.append(record)
     wb.close()
     
     # Store normalized via store_normalized
