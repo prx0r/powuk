@@ -298,6 +298,22 @@ def ons_labour_demand(conn):
         pass
     return 0
 
+@c("refcom", 86400)  # daily
+def refcom_capacity(conn):
+    """REFCOM F-gas certified companies — HVAC/refrigeration capacity."""
+    try:
+        # Get total count
+        url = "https://api.refcom.org.uk/api/PublicCompany/GetFgasActiveCertificateCount"
+        req = urllib.request.Request(url, headers={"User-Agent": "powuk/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            total = int(resp.read().decode().strip())
+        
+        obs(conn, "certification", "fgas_companies", total, "companies")
+        store(conn, "certification", "refcom_count", json.dumps({"total": total}).encode())
+        return total
+    except Exception as e:
+        return 0
+
 # ─── SERVER ──────────────────────────────────────────────────
 
 async def run_one(name, fn, interval, conn):
