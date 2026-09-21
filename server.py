@@ -56,11 +56,15 @@ def get_db():
     return c
 
 def store(c, source, dataset, data, rows=None):
+    """Store data with immutable content-hashed paths."""
     h = hashlib.sha256(data).hexdigest()[:16]
-    ts = datetime.now(timezone.utc).isoformat()
-    path = RAW / source / f"{dataset}.{'json' if data[:1] in (b'{',b'[') else 'csv'}"
+    ts = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
+    ext = "json" if data[:1] in (b"{", b"[") else "csv"
+    path = RAW / source / f"{ts}_{h}.{ext}"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
+    
+    # Record in DB
     c.execute("INSERT OR REPLACE INTO raw_ingest VALUES (?,?,?,?,?,?,?,?,'ok')",
               (f"{source}_{dataset}_{h}", source, dataset, ts, h, str(path), rows, len(data)))
     c.commit()
@@ -175,20 +179,55 @@ def trade_supply(conn):
 @c("planning_apps", 7200)  # 2h
 def planning_demand(conn):
     """Planning applications — where development pressure exists."""
-    d = fetch_json("https://www.planning.data.gov.uk/entity.json?dataset=planning-application&limit=100")
-    if "entities" in d:
-        store(conn, "planning", "apps", json.dumps(d).encode(), len(d["entities"]))
-        obs(conn, "planning", "apps_total", d.get("count", 0))
-        return d.get("count", 0)
+    try:
+        all_entities = []
+        start_index = 0
+        page_size = 100
+        
+        while True:
+            url = f"https://www.planning.data.gov.uk/entity.json?dataset=planning-application&limit={page_size}&start={start_index}"
+            d = fetch_json(url)
+            if "entities" not in d or len(d["entities"]) == 0:
+                break
+            all_entities.extend(d["entities"])
+            start_index += page_size
+            if start_index >= d.get("count", 0):
+                break
+            if start_index >= 1000:  # Safety limit
+                break
+        
+        if all_entities:
+            store(conn, "planning", "apps", json.dumps({"entities": all_entities}).encode(), len(all_entities))
+            obs(conn, "planning", "apps_total", float(len(all_entities)), "apps")
+            return len(all_entities)
+    except Exception as e:
+        log(f"planning_apps error: {e}")
     return 0
 
 @c("contracts_finder", 7200)  # 2h
 def procurement_demand(conn):
     """Public procurement — where government is buying capacity."""
-    d = fetch_json("https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search?limit=100")
-    if "releases" in d:
-        store(conn, "planning", "contracts", json.dumps(d).encode(), len(d["releases"]))
-        return len(d["releases"])
+    try:
+        all_releases = []
+        start_index = 0
+        page_size = 100
+        
+        while True:
+            url = f"https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search?limit={page_size}&start={start_index}"
+            d = fetch_json(url)
+            if "releases" not in d or len(d["releases"]) == 0:
+                break
+            all_releases.extend(d["releases"])
+            start_index += page_size
+            if start_index >= 1000:  # Safety limit
+                break
+        
+        if all_releases:
+            store(conn, "planning", "contracts", json.dumps({"releases": all_releases}).encode(), len(all_releases))
+            obs(conn, "planning", "contracts_total", float(len(all_releases)), "releases")
+            return len(all_releases)
+    except Exception as e:
+        log(f"contracts_finder error: {e}")
     return 0
 
 @c("find_tender", 7200)  # 2h
@@ -253,21 +292,30 @@ def apar_providers(conn):
     """APAR — Apprenticeship Provider and Assessment Register.
     
     The training provider universe. Who is eligible to train apprentices.
+    Downloads fresh CSV each time (not hardcoded path).
     """
-    src = Path("/root/powuk/data/raw/labour/apar.csv")
-    if not src.exists():
-        # Download if not present
-        import urllib.request
-        url = "https://download.apprenticeships.education.gov.uk/apar/downloadcsv?filename=apar-2026-09-15-11-10-40.csv"
-        try:
-            urllib.request.urlretrieve(url, str(src))
-        except Exception:
-            return 0
-    
     import csv
-    providers = []
-    with open(src) as f:
-        reader = csv.DictReader(f)
+    import urllib.request
+    
+    # Download current APAR
+    url = "https://download.apprenticeships.education.gov.uk/apar/downloadcsv?filename=apar.csv"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "powuk/1.0"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = resp.read()
+        
+        # Store raw immutably
+        h = hashlib.sha256(data).hexdigest()[:16]
+        ts = datetime.now(timezone.utc).strftime("%Y/%m/%d/%H%M%S")
+        raw_path = RAW / "labour" / f"apar_{h}.csv"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_bytes(data)
+        
+        # Parse CSV
+        lines = data.decode().strip().split("\n")
+        reader = csv.DictReader(lines)
+        
+        providers = []
         for row in reader:
             if row.get("CanDeliverApprenticeships") == "True":
                 providers.append({
@@ -277,10 +325,14 @@ def apar_providers(conn):
                     "status": row.get("Status"),
                     "start_date": row.get("StartDate"),
                 })
-    
-    store(conn, "labour", "apar", json.dumps(providers).encode(), len(providers))
-    obs(conn, "labour", "apar_providers", len(providers))
-    return len(providers)
+        
+        # Store in DB
+        store(conn, "labour", "apar", json.dumps(providers).encode(), len(providers))
+        obs(conn, "labour", "apar_providers", float(len(providers)), "providers")
+        return len(providers)
+    except Exception as e:
+        log(f"apar error: {e}")
+        return 0
 
 @c("ofqual", 86400)  # daily
 def ofqual_qualifications(conn):
@@ -375,8 +427,25 @@ def status(conn):
     rows = conn.execute("SELECT * FROM collector_state ORDER BY last_run DESC").fetchall()
     obs_count = conn.execute("SELECT COUNT(*) FROM observation").fetchone()[0]
     raw_count = conn.execute("SELECT COUNT(*) FROM raw_ingest").fetchone()[0]
+    
+    # Health check
+    health = {}
+    for row in rows:
+        source = row[0]
+        last_run = row[1]
+        last_status = row[2]
+        run_count = row[5]
+        
+        if last_status == "error":
+            health[source] = "FAILED"
+        elif run_count == 0:
+            health[source] = "NOT_RUN"
+        else:
+            health[source] = "HEALTHY"
+    
     return {
         "collectors": {r[0]: {"status": r[2], "rows": r[3], "runs": r[5]} for r in rows},
+        "health": health,
         "observations": obs_count,
         "raw_ingests": raw_count,
         "db_bytes": DB.stat().st_size if DB.exists() else 0
