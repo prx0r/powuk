@@ -4,6 +4,12 @@ Companies House SDK for powuk.
 REST API + Document API + Streaming API + Bulk Data.
 All in one place. Import and use.
 
+STALE: This is a full-featured SDK (327 lines) but server.py has its own
+inline Companies House collector that does not use this SDK. The SDK is
+more complete (search, officers, filings, streaming, trade filters) and
+should be used when server.py's CH collector is refactored. Not imported
+by any active code. Kept for future use.
+
 Usage:
     from sdk.companies_house import search_companies, get_company, get_officers
     

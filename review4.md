@@ -1,5 +1,16 @@
 # powuk review4.md
 
+<!-- HISTORICAL REVIEW — 2026-09-21, commit ~89236c3. Third review.
+     Cross-referenced older UKGraph/UKOpportunity/datagarden work. Argued POWUK
+     recovered capacity side but dropped key economic primitives. Identified 20
+     missing dimensions: wage/price response, workforce stock, entry/exit dynamics,
+     supplier density, property stock, regulation as causal object, grants,
+     planning semantics, procurement lifecycle, job listing lifecycle, technology
+     exposure, skills graph, training ROI, displacement signals, business demography,
+     proper place spine. Proposed 9 primitives: DEMAND, CAPACITY, PIPELINE, PRICE,
+     ENTRY, EXIT, FRICTION, TECHNOLOGY, OUTCOMES. Priority additions for
+     Checkpoint 1: 14 items listed. -->
+
 > Looking across `datagarden`, `ographuk`, `cgraphuk`, UKOpportunity/UKBoring and the older UKGraph work, **POWUK has recovered the capacity side but has dropped several of the best economic primitives.**
 
 The clean formulation should be:

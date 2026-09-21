@@ -1,4 +1,9 @@
-"""Linear production-network propagation utilities."""
+"""Linear production-network propagation utilities.
+
+STALE: Level 3 model. Imported from pow-scarcity-lab zip. Not wired into any
+active data pipeline. No tests. No type hints. Kept for future Level 3 use
+when production-network propagation analysis is implemented.
+"""
 from __future__ import annotations
 import numpy as np
 

@@ -1,4 +1,9 @@
-"""Simple technology-shock -> component/skill/maintenance scenario engine."""
+"""Simple technology-shock -> component/skill/maintenance scenario engine.
+
+STALE: Level 3 model. Imported from pow-scarcity-lab zip. Only imports
+shadow.py internally. Not wired into any active data pipeline. No tests.
+Kept for future Level 3 use when scenario analysis is implemented.
+"""
 from __future__ import annotations
 import json
 import numpy as np

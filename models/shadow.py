@@ -1,4 +1,9 @@
-"""Constraint pressure and LP shadow prices."""
+"""Constraint pressure and LP shadow prices.
+
+STALE: Level 3 model. Imported from pow-scarcity-lab zip. Only imported by
+scenario.py internally. Not wired into any active data pipeline. No tests.
+Kept for future Level 3 use when shadow price calculation is implemented.
+"""
 from __future__ import annotations
 import numpy as np
 from scipy.optimize import linprog

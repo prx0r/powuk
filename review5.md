@@ -1,5 +1,16 @@
 # powuk review5.md
 
+<!-- HISTORICAL REVIEW — 2026-09-21, commit 89236c3. Fourth review.
+     Characterized as "hardening/documentation patch." Identified 16 issues:
+     health state semantically broken, retry can stall event loop, DATA_SOURCES.md
+     confirms several "live" collectors are metadata probes, don't let blockers
+     become "scrape it", Skills England/DfE/ONS not actually blocked, ONS measures
+     row count not data, FOUR sources of truth, registry not executable, Nomis is
+     research blocker, apprenticeship API key not blocking history, don't store
+     count when entity-level possible, preserve source coverage, retry needs
+     Retry-After/jitter/classification, documentation overstates reality.
+     Actionable next step: "Truthfulness + blocker-resolution commit." -->
+
 Latest push `89236c3` is mostly a **hardening/documentation patch**, not a structural checkpoint leap. The useful change is retry handling plus explicit `ok/empty/error`; the bigger value is actually in `DATA_SOURCES.md` because it exposes exactly where the blockers are.
 
 I would not repeat the prior review. The new issues I see are these.

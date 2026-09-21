@@ -1,5 +1,12 @@
 # powuk review2.md
 
+<!-- HISTORICAL REVIEW — 2026-09-21, commit ~41dadf4. First major code review.
+     Issues identified: secrets committed, monolith server.py, no collector
+     contracts, raw storage overwrites, no manifest/provenance, APAR hardcoded,
+     CH keyword search, planning/contracts capped at 100, no monitoring, no tests.
+     Many of these have been fixed in subsequent commits. See review6.md for
+     the latest review state. -->
+
 > Checkpoint 1 is not a scarcity engine. It is a trustworthy historical data acquisition machine.
 
 ---

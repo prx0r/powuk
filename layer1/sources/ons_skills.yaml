@@ -1,0 +1,25 @@
+id: ons_skills
+garden: powuk
+authority:
+  name: Office for National Statistics
+  url: https://www.ons.gov.uk
+  license: ogl
+  redistribution: allowed
+collection:
+  cadence: daily
+  backfill_from: "2017-01"
+  mode: backfill
+storage:
+  raw: true
+  append_only: true
+  format: xlsx
+time:
+  source_timestamp: true
+  observed_at: true
+health:
+  expected_min_rows: 1000
+  max_staleness_hours: 48
+url: https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/skillscompetenciesandotherjobrequirementsfromonlinejobadvertsuk/january2017toseptember2025/skillscompetenciesandotherjobrequirementsfromonlinejobadvertsuk.xlsx
+format: xlsx
+auth: none
+notes: "Skills, competencies from online job adverts. Jan 2017 - Sep 2025."

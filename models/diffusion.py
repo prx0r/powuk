@@ -3,6 +3,10 @@
 Uses a generalized Richards curve as a practical approximation to the
 Bertalanffy-Richards family. It is intentionally lightweight; for production,
 port/clone the authors' 2026 Bayesian replication code and preserve posterior
+
+STALE: Level 3 model. Imported from pow-scarcity-lab zip. Not wired into any
+active data pipeline. No tests. No type hints. Kept for future Level 3 use
+when constraint economics are implemented.
 uncertainty rather than relying on point estimates.
 """
 from __future__ import annotations

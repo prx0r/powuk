@@ -1,6 +1,11 @@
 """Reference-only shared POW contracts.
 
 Keep this package tiny. Domain tables belong to each garden.
+
+STALE: Never imported by any code in this repo. Defines canonical dataclasses
+(TruthClass, Recoverability, DataRights, Observation, DerivedFact, etc.)
+that may be useful when building Level 2/3 entity resolution or economic
+event tracking. Currently orphan definitions — kept as reference for future use.
 """
 from dataclasses import dataclass, field
 from enum import Enum

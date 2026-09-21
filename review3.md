@@ -1,5 +1,14 @@
 # powuk review3.md
 
+<!-- HISTORICAL REVIEW — 2026-09-21, commit 41dadf4e. Second review.
+     Acknowledged credential cleanup, timestamp paths, ONS history, REFCOM
+     discovery, sources.yaml introduction. Identified 20 problems including
+     invalid YAML syntax, misleading collector claims, REFCOM single-number
+     collection, CH keyword search (now fixed to SIC), wrong stream credential,
+     INSERT OR REPLACE bug, filesystem timestamps in DB, wrong file types,
+     no normalization, pagination capped, health monitoring cosmetic, no tests.
+     Assessment: "around one-third of the way to a real Checkpoint 1." -->
+
 > Latest push: **good infrastructure progress, but the repo is still at "collector demo" stage rather than Checkpoint 1**.
 
 The important change is that the agent is now fixing the right category of problems instead of building more modelling. Commit `41dadf4e` genuinely improves raw retention, secret handling, source configuration and basic monitoring. But several claims in the commit message are stronger than what the code actually does.

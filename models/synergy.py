@@ -3,6 +3,11 @@
 This is NOT exact Partial Information Decomposition. It is a cheap first-pass
 screen that asks whether an interaction term materially improves out-of-sample
 prediction beyond the additive inputs. Exact PID should be a later optional
+
+STALE: Level 3 model. Imported from pow-scarcity-lab zip. Not wired into any
+active data pipeline. No tests. Kept for future Level 3 use when synergy
+detection is implemented.
+"""
 model for shortlisted relationships.
 """
 from __future__ import annotations

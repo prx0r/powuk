@@ -3,6 +3,12 @@ powuk capability_provider entity.
 
 Who can legally or credibly do the work now.
 Built from certification registers, Companies House, and training data.
+
+STALE: Not imported by any code in this repo. Defines SQLite schema and
+upsert/query functions for CapabilityProvider and ProviderCapability entities.
+This is a Level 2 entity-resolution building block — not yet wired into the
+Level 1 data collection pipeline. Kept for future Level 2 use when entity
+resolution and provider capability tracking are implemented.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone

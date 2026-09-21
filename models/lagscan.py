@@ -2,6 +2,10 @@
 
 This is a discovery screen, not causal proof. Use PCMCI+/J-PCMCI+ once data
 volume and dimensionality justify it; validate candidate edges out of sample.
+
+STALE: Level 3 model. Imported from pow-scarcity-lab zip. Not wired into any
+active data pipeline. No tests. No type hints. Kept for future Level 3 use
+when causal-lag detection is implemented.
 """
 from __future__ import annotations
 import numpy as np

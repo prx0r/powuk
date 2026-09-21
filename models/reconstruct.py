@@ -3,6 +3,10 @@
 Mungo/Lafond/Farmer show industry, location and firm size are informative.
 This implementation is deliberately generic: pass pairwise numeric features
 and observed edge labels, then score candidate links.
+
+STALE: Level 3 model. Imported from pow-scarcity-lab zip. Not wired into any
+active data pipeline. No tests. No type hints. Kept for future Level 3 use
+when production-network link reconstruction is implemented.
 """
 from __future__ import annotations
 import numpy as np
