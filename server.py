@@ -301,13 +301,35 @@ def ofqual_qualifications(conn):
 def ons_labour_demand(conn):
     """ONS labour demand — job adverts by SOC × region."""
     try:
-        d = fetch("https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/labourdemandvolumesbystandardoccupationclassificationsoc2020uk/labourdemandbyoccupationandregion2024.xlsx", 60)
-        store(conn, "labour", "ons_demand", d, len(d))
-        obs(conn, "labour", "ons_labour_data_size", len(d), "bytes")
-        return len(d)
-    except Exception:
-        pass
-    return 0
+        url = "https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/labourdemandvolumesbystandardoccupationclassificationsoc2020uk/january2017tojuly2026/labourdemandbyoccupation.xlsx"
+        d = fetch(url, 60)
+        
+        # Parse XLSX to count rows
+        import io
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(d), read_only=True)
+            total_rows = 0
+            for sheet in wb.sheetnames:
+                ws = wb[sheet]
+                total_rows += ws.max_row
+            wb.close()
+            row_count = total_rows
+        except Exception:
+            row_count = 0
+        
+        # Store raw
+        h = hashlib.sha256(d).hexdigest()[:16]
+        raw_path = RAW / "labour" / f"ons_demand_{h}.xlsx"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_bytes(d)
+        
+        store(conn, "labour", "ons_demand", d, row_count)
+        obs(conn, "labour", "ons_labour_rows", float(row_count), "rows")
+        return row_count
+    except Exception as e:
+        log(f"ons_labour error: {e}")
+        return 0
 
 @c("refcom", 86400)  # daily
 def refcom_capacity(conn):
