@@ -1,0 +1,11 @@
+{
+  "protocol": "pow-health/1",
+  "source_id": "planning_apps",
+  "last_attempt": "2026-09-23T07:49:42.230288+00:00",
+  "last_success": "2026-09-23T07:49:42.230288+00:00",
+  "attempt_status": "success",
+  "records_seen": 5000,
+  "records_new": 5000,
+  "error": null,
+  "checked_at": "2026-09-23T07:49:42.230288+00:00"
+}

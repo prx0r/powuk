@@ -1,0 +1,11 @@
+{
+  "protocol": "pow-health/1",
+  "source_id": "neso_demand",
+  "last_attempt": "2026-09-23T07:49:39.876192+00:00",
+  "last_success": "2026-09-23T07:49:39.876192+00:00",
+  "attempt_status": "success",
+  "records_seen": 2880,
+  "records_new": 2880,
+  "error": null,
+  "checked_at": "2026-09-23T07:49:39.876192+00:00"
+}

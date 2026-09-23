@@ -1,0 +1,6 @@
+{"cluster": "electrical", "sic_codes": ["43210"], "active_firms": 10000}
+{"cluster": "hvac", "sic_codes": ["43220"], "active_firms": 10000}
+{"cluster": "solar", "sic_codes": ["35110"], "active_firms": 10000}
+{"cluster": "telecom", "sic_codes": ["61100"], "active_firms": 4294}
+{"cluster": "repair", "sic_codes": ["95110"], "active_firms": 5359}
+{"cluster": "construction", "sic_codes": ["41100"], "active_firms": 10000}

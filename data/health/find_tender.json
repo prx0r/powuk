@@ -1,0 +1,10 @@
+{
+  "protocol": "pow-health/1",
+  "source_id": "find_tender",
+  "last_attempt": "2026-09-23T07:47:45.897186+00:00",
+  "last_success": null,
+  "attempt_status": "failed",
+  "records_seen": 0,
+  "error": "HTTP 400: {\n    \"timestamp\": \"2026-09-23T07:47:45+01:00\",\n    \"status\": 400,\n    \"error\": \"Bad Request\",\n    \"message\": \"Request parameters unknown\",\n    \"path\": \"/api/1.0/ocdsReleasePackages\",\n    \"exception\":",
+  "checked_at": "2026-09-23T07:47:45.897186+00:00"
+}

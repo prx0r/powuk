@@ -792,6 +792,11 @@ async def run_all(conn):
     """Run all collectors once, each in its own thread with its own DB connection."""
     log(f"Running {len(COLLECTORS)} collectors...")
     db_path = str(DB)
+    
+    # Ensure health directory exists
+    health_dir = DATA / "health"
+    health_dir.mkdir(parents=True, exist_ok=True)
+    
     tasks = []
     for name, fn, _ in COLLECTORS:
         async def _run(n=name, f=fn):
@@ -802,6 +807,24 @@ async def run_all(conn):
                 if not isinstance(result, CollectorResult):
                     result = CollectorResult.success(rows=int(result) if result else 0)
                 state(conn, n, result.status.value, result.rows)
+                
+                # Write health artifact for powops
+                now = datetime.now(timezone.utc)
+                health_artifact = {
+                    "protocol": "pow-health/1",
+                    "source_id": n,
+                    "last_attempt": now.isoformat(),
+                    "last_success": now.isoformat() if result.status.value in ("success", "success_empty") else None,
+                    "attempt_status": result.status.value,
+                    "records_seen": result.rows,
+                    "records_new": result.rows,
+                    "error": result.error,
+                    "checked_at": now.isoformat(),
+                }
+                artifact_path = health_dir / f"{n}.json"
+                with open(artifact_path, "w") as hf:
+                    json.dump(health_artifact, hf, indent=2)
+                
                 icon = {"success": "✓", "success_empty": "○", "partial": "△", "failed": "✗", "blocked": "■"}
                 log(f"{icon.get(result.status.value, '?')} {n}: {result.status.value} rows={result.rows}")
                 if result.warnings:
@@ -809,6 +832,24 @@ async def run_all(conn):
                         log(f"  ⚠ {n}: {w}")
             except Exception as e:
                 state(conn, n, "failed", 0)
+                # Write failure health artifact
+                now = datetime.now(timezone.utc)
+                health_artifact = {
+                    "protocol": "pow-health/1",
+                    "source_id": n,
+                    "last_attempt": now.isoformat(),
+                    "last_success": None,
+                    "attempt_status": "failed",
+                    "records_seen": 0,
+                    "error": str(e)[:500],
+                    "checked_at": now.isoformat(),
+                }
+                err_health_dir = DATA / "health"
+                err_health_dir.mkdir(parents=True, exist_ok=True)
+                artifact_path = err_health_dir / f"{n}.json"
+                with open(artifact_path, "w") as hf:
+                    json.dump(health_artifact, hf, indent=2)
+                
                 log(f"✗ {n}: {e}")
         tasks.append(_run())
     await asyncio.gather(*tasks)
